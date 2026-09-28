@@ -1,10 +1,57 @@
-# ⚾ MLB Live PBP — Live MLB Scoreboard & Play-by-Play
+# Loaded Late — tied, bases-loaded MLB alerts
 
-> ### 🛑 **CHECKPOINT NOTICE: `v1.0.0-stable-checkpoint`** 🛑
-> **This tag marks a safe, working baseline of the code. If any experimental changes break the app, you can instantly revert back to this stable state by running:**
-> ```bash
-> git reset --hard v1.0.0-stable-checkpoint
-> ```
+This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.github.io/MLB-Live-PBP/reviews.html), now focused on **one alert condition only**:
+
+> **Live MLB game + tied score + bottom of inning 9 or later + runners on all three bases + fewer than three outs.**
+
+- **Home (`index.html`) / `bases-loaded.html`:** the situation monitor. No replay, challenge, scoring-change or hit-probability alerts run on this page.
+- **On watch:** begins at the tied changeover into bottom 9+ (including the third out at the top), or whenever a game becomes tied during a qualifying bottom half. There is no maximum inning.
+- **Route-independent:** reads official first/second/third base occupants, not event descriptions. Walks, hits, errors, interference, automatic extra-inning runners and official corrections all use the same rule.
+- **Alerts:** highlighted live cards, optional sound and opt-in desktop notifications. A continuous loaded situation alerts once; a confirmed exit and reload can alert again, even in the same inning.
+- **History:** immutable score, outs and runner snapshots, retained in this browser for seven days (maximum 200 entries). Refreshing the page restores history and deduplication state. Not shared across devices or a complete historical replay.
+- **Original pages preserved:** `scoreboard.html`, `game.html`, and `reviews.html`. Their legacy features remain separate from this narrow monitor.
+
+## Run / preview
+
+No build or dependencies are required:
+
+```bash
+node server.mjs
+# http://localhost:8000/ — live monitor
+# http://localhost:8000/?demo=1 — guided, offline synthetic scenarios
+# http://localhost:8000/scoreboard.html — original scoreboard
+```
+
+The server binds `0.0.0.0`; any static host (including GitHub Pages) also works.
+The alert monitor uses only the public MLB API and browser storage, not the optional replay-log backend.
+Both alert HTML entrypoints are intentionally identical; update both when changing the markup.
+
+## Monitoring limits
+
+**Keep one monitor tab open and visible.** Hidden tabs pause and closing the browser stops monitoring. This is not a server-side, always-on push/SMS service. Notifications need browser support and permission; sound must be enabled with a click each session.
+
+Schedule discovery checks today and yesterday in America/New_York every 15 seconds, retaining live overnight games. All live games in inning 9+ are checked using coherent status + linescore snapshots, even if not yet tied, every two seconds **after** each scan (four concurrent requests maximum). Upstream delays, errors and brief between-poll situations can cause missed alerts. Network failures and stale snapshots are visibly marked, not treated as an all-clear. The shared API client honors HTTP 429 backoff.
+
+See [the detection rules, coverage and limitations](docs/bases-loaded-alerts.md).
+
+## Test the alert system
+
+```bash
+node tools/bases-loaded-test.mjs
+node tools/bases-loaded-monitor-test.mjs
+```
+
+These deterministic tests need neither external packages nor live MLB games. The guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, and bottom 14. Demo data never enters live history.
+
+## Deploy this copy
+
+Serve this repository root on GitHub Pages or another static host. This checkout does **not** change the original `MLB-Live-PBP` deployment; publishing this copy requires configuring/deploying this repository. See the existing deployment section below for hosting options. API usage remains subject to MLB's terms; this is an unofficial, personal-use project.
+
+---
+
+## Original MLB Live PBP documentation
+
+The following describes the preserved scoreboard, game and replay pages. The original scoreboard is now `scoreboard.html`, not `index.html`; the home page is the alert monitor.
 
 A zero-dependency, static web app that pulls **live MLB game data** straight from the
 public MLB StatsAPI and renders it in a **Gameday-style scoreboard** — exactly the data

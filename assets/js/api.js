@@ -259,6 +259,18 @@ const MLB = (() => {
     }
   }
 
+  /** Coherent, lean snapshot for the narrow late-inning alert monitor.
+   * Status and linescore come from one response, not independently timed polls.
+   * Keep base identities: official occupancy is authoritative, not play text.
+   */
+  async function getAlertSnapshot(gamePk, options = {}) {
+    const fields = 'gamePk,gameData,status,abstractGameState,detailedState,statusCode,' +
+      'liveData,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,' +
+      'offense,first,second,third,id,fullName';
+    return getJSON(`${V11}/game/${gamePk}/feed/live?fields=${fields}`,
+      { timeout: 5000, retries: 0, ...options });
+  }
+
   /**
    * Official team directory for a season: resolves teamId -> full club
    * metadata { id, name, abbreviation, teamName, locationName }.
@@ -504,7 +516,7 @@ const MLB = (() => {
   }
 
   return {
-    getSchedule, getReviewStatus, getGameStatus, getLiveFeed, getPlayByPlay,
+    getSchedule, getReviewStatus, getGameStatus, getLiveFeed, getPlayByPlay, getAlertSnapshot,
     getTeams, getChallengeCounts,
     rateLimitedForMs, parseRetryAfter,
     RATE_LIMIT_BACKOFF_MS, RATE_LIMIT_MAX_BACKOFF_MS,
