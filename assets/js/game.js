@@ -120,7 +120,7 @@
     if (!gamePk || !/^\d+$/.test(gamePk)) {
       $('#main').appendChild(UI.el('div', 'empty',
         'No game selected. Pick a game from the scoreboard.'));
-      $('#main').appendChild(UI.el('a', 'btn', '← Back to scoreboard', { href: 'index.html' }));
+      $('#main').appendChild(UI.el('a', 'btn', '← Back to scoreboard', { href: 'scoreboard.html' }));
       return;
     }
     wireTabs();

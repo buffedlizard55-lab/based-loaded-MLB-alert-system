@@ -1,5 +1,15 @@
 # API use, the governing terms, and the request budget every latency change is measured against
 
+> **Loaded Late copy (2026-09-28):** the default home page is now the narrow
+> bases-loaded alert monitor. It does **not** run the aggressive legacy replay
+> polling described below. Its budget is two schedule requests every 15 seconds
+> plus one lean status/linescore snapshot per live inning-9+ game per scan,
+> followed by a two-second wait (maximum four concurrent snapshot requests).
+> Hidden tabs pause; stale data is marked unconfirmed; the shared client's 429
+> backoff applies. See [the monitor contract](bases-loaded-alerts.md). The older
+> rates below apply only when separately visiting the preserved legacy pages.
+
+
 This document is deliberately narrow: it quotes the rules that actually attach to the data this app
 reads, states what the app does to stay inside them, and lists the exact request rate of every
 polling surface **line by line**. It is not legal advice, and nothing here has been reviewed by

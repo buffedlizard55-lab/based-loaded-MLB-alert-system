@@ -1,63 +1,209 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MLB Live Scoreboard</title>
-  <meta name="description" content="Live MLB scoreboard and game play-by-play powered by the public MLB StatsAPI — the same data behind mlb.com Gameday.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23fff' stroke='%23e03131' stroke-width='6'/%3E%3Cpath d='M50 4 A46 46 0 0 1 96 50 M50 96 A46 46 0 0 1 4 50 M4 50 A46 46 0 0 1 50 4 M96 50 A46 46 0 0 1 50 96' stroke='%23e03131' stroke-width='2.5' fill='none'/%3E%3C/svg%3E">
-  <!-- Open the data host while the stylesheet is still parsing: each page's
-       first request is a cross-origin call to statsapi.mlb.com (assets/js/api.js),
-       and preconnect removes that DNS + TCP + TLS setup (one connection setup;
-       standard preconnect behaviour, not a figure measured here) from the
-       critical path of the first poll. The two
-       image hosts are only dns-prefetched — they are lazy-loaded logos and
-       headshots off the critical path, so an extra connection would cost more
-       than it saves. Ignored by browsers without support; harmless otherwise. -->
-  <link rel="preconnect" href="https://statsapi.mlb.com" crossorigin>
-  <link rel="dns-prefetch" href="https://statsapi.mlb.com">
-  <link rel="dns-prefetch" href="https://www.mlbstatic.com">
-  <link rel="dns-prefetch" href="https://img.mlbstatic.com">
-  <link rel="stylesheet" href="assets/css/style.css">
-</head>
-<body class="page-scoreboard">
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-ball">⚾</span>
-      <span>MLB Live PBP</span>
-      <span class="brand-sub">scoreboard · play-by-play</span>
-    </div>
-    <a class="btn btn-feed" href="reviews.html" title="Live replay review feed for every game">🚨 Replay Feed</a>
-    <a class="btn btn-feed" href="bases-loaded.html" title="Tied game bases-loaded alerts from the bottom of the ninth onward">⚾ Bases-Loaded Alerts</a>
-    <div class="date-nav">
-      <button class="btn btn-ghost" onclick="Scoreboard.prevDay()" title="Previous day">←</button>
-      <input type="date" id="date-picker" onchange="Scoreboard.pickDate()" aria-label="Game date">
-      <button class="btn btn-ghost" onclick="Scoreboard.nextDay()" title="Next day">→</button>
-      <button class="btn" onclick="Scoreboard.today()">Today</button>
-    </div>
-    <div id="date-label" class="date-label"></div>
-  </header>
-
-  <div id="banner" class="banner"></div>
-  <nav id="tabs" class="tabs" aria-label="Filter games"></nav>
-
-  <main id="game-list" class="game-list"></main>
-
-  <div id="status-line" class="status-line"></div>
-
-  <footer class="site-footer">
-    <p>
-      Unofficial fan project. Data via the public MLB StatsAPI
-      (<a href="https://statsapi.mlb.com" target="_blank" rel="noopener">statsapi.mlb.com</a>) —
-      the same feeds that power <a href="https://www.mlb.com" target="_blank" rel="noopener">MLB.com</a> Gameday.
-      Not affiliated with MLB or MLB Advanced Media.
-    </p>
-  </footer>
-
-  <script src="assets/js/api.js"></script>
-  <script src="assets/js/ui.js"></script>
-  <script src="assets/js/reviews.js"></script>
-  <script src="assets/js/feed-log.js"></script>
-  <script src="assets/js/scoreboard.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Loaded Late — MLB situation alerts</title>
+    <meta
+      name="description"
+      content="One situation. Every MLB game. Alerts for tied games with bases loaded in the bottom of the ninth or any later inning."
+    />
+    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/bases-loaded.css" />
+    <link rel="preconnect" href="https://statsapi.mlb.com" crossorigin />
+  </head>
+  <body class="loaded-page">
+    <header class="loaded-header">
+      <a class="loaded-brand" href="index.html" aria-label="Loaded Late home"
+        ><span class="brand-mark">◆</span> LOADED<span>LATE</span
+        ><span class="brand-divider">/</span><small>MLB ALERT SYSTEM</small></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="bases-loaded.html" aria-current="page">Situation monitor</a
+        ><a href="scoreboard.html">Scoreboard ↗</a
+        ><a href="reviews.html">Replay feed ↗</a>
+      </nav>
+    </header>
+    <main class="loaded-main">
+      <section class="loaded-hero">
+        <div>
+          <p class="eyebrow">
+            <span class="signal-dot"></span> ALL MLB GAMES · ONE SPECIFIC MOMENT
+          </p>
+          <h1>
+            Tie game.<br />Bases loaded.<br /><span>Bottom 9 or later.</span>
+          </h1>
+          <p class="hero-description">
+            The situation worth waiting for. We watch every game and flag the
+            moment all three bases are occupied in a tied, late-inning bottom
+            half.
+          </p>
+          <div class="rule-chips">
+            <span>Equal scores</span><b>+</b><span>3 occupied bases</span
+            ><b>+</b><span>Bottom 9+</span>
+          </div>
+        </div>
+        <div
+          class="field-panel"
+          aria-label="All three bases occupied. Bottom ninth or any extra inning."
+        >
+          <div class="field-top">
+            <span>THE ONLY ALERT WE TRACK</span
+            ><span class="field-badge">9+</span>
+          </div>
+          <div class="base-field">
+            <div class="field-lines"></div>
+            <span class="field-base second"></span
+            ><span class="field-base third"></span
+            ><span class="field-base first"></span
+            ><span class="home-plate"></span><span class="mound"></span
+            ><span class="field-label label-first">1B</span
+            ><span class="field-label label-second">2B</span
+            ><span class="field-label label-third">3B</span>
+          </div>
+          <div class="field-bottom">
+            <span><i></i> BASES LOADED</span><span>BOT 9, 10, 11, 12…</span>
+          </div>
+        </div>
+      </section>
+      <section class="monitor-toolbar" aria-label="Monitoring controls">
+        <div class="monitor-status">
+          <span id="connection-dot" class="signal-dot"></span>
+          <div>
+            <strong id="status" role="status">Connecting to MLB…</strong
+            ><small id="updated">Waiting for the first official snapshot</small>
+          </div>
+        </div>
+        <div class="monitor-actions">
+          <button class="btn btn-ghost" id="sound" aria-pressed="false">
+            Sound off</button
+          ><button class="btn btn-ghost" id="notify" aria-pressed="false">
+            Enable notifications</button
+          ><button class="btn" id="refresh">↻ Refresh</button>
+        </div>
+      </section>
+      <p id="feedback" class="control-feedback" role="status"></p>
+      <div id="demo-banner" class="demo-banner" hidden>
+        <div>
+          <strong>DEMO · Synthetic game, no live data</strong>
+          <p id="demo-description"></p>
+        </div>
+        <button class="btn" id="demo-next">Next scenario →</button
+        ><a href="bases-loaded.html">Back to live ↗</a>
+      </div>
+      <section class="monitor-metrics" aria-label="Monitor summary">
+        <div>
+          <span>GAMES ON RADAR</span><strong id="games-count">—</strong
+          ><small>Today + overnight carryovers</small>
+        </div>
+        <div>
+          <span>IN THE WATCH WINDOW</span><strong id="watch-count">—</strong
+          ><small>Tied · entering / in bottom 9+</small>
+        </div>
+        <div class="metric-active">
+          <span>BASES-LOADED NOW</span><strong id="active-count">—</strong
+          ><small>Exact situation matched</small>
+        </div>
+        <div>
+          <span>ALERTS SAVED</span><strong id="history-count">0</strong
+          ><small>This browser · last 7 days</small>
+        </div>
+      </section>
+      <div class="monitor-columns">
+        <div>
+          <section class="monitor-section">
+            <div class="section-heading">
+              <h2><span class="section-number">01</span> Live alerts</h2>
+              <span class="section-tag">EXACT MATCH ONLY</span>
+            </div>
+            <div id="current" aria-live="polite">
+              <div class="alert-empty">Checking the official MLB feed…</div>
+            </div>
+          </section>
+          <section class="monitor-section">
+            <div class="section-heading">
+              <h2><span class="section-number">02</span> On watch</h2>
+              <span class="section-tag">BEFORE THE BASES LOAD</span>
+            </div>
+            <div id="watch"></div>
+          </section>
+          <section class="monitor-section">
+            <div class="section-heading">
+              <h2><span class="section-number">03</span> Alert history</h2>
+              <span class="section-tag">OBSERVED, NOT PREDICTED</span>
+            </div>
+            <div id="history"></div>
+          </section>
+        </div>
+        <aside>
+          <section class="how-it-works">
+            <p class="eyebrow">A NARROW FOCUS</p>
+            <h2>Nothing else.<br />Just this situation.</h2>
+            <ol>
+              <li>
+                <strong>Enter the watch window</strong>
+                <p>
+                  A tied game reaches the changeover into the bottom of the 9th
+                  or any later inning.
+                </p>
+              </li>
+              <li>
+                <strong>Watch the bases</strong>
+                <p>
+                  We check the official runners on first, second and third. One
+                  out, two outs, no outs — all count.
+                </p>
+              </li>
+              <li>
+                <strong>Get the alert</strong>
+                <p>
+                  All three occupied, still tied, bottom 9+? An alert appears.
+                  Sound and notifications are optional.
+                </p>
+              </li>
+            </ol>
+            <a class="demo-link" href="?demo=1"
+              >Try a guided demo <span>↗</span></a
+            >
+          </section>
+          <details class="coverage" open>
+            <summary>Every route to loaded bases</summary>
+            <p>
+              Hits, walks, intentional walks, hit-by-pitches, errors, fielder’s
+              choices, interference, an uncaught third strike, runner advances,
+              placed runners in extras and official corrections.
+            </p>
+            <p>
+              No keyword guessing: the official base occupancy decides. A tying
+              play that leaves the bases loaded also qualifies. There is no
+              upper inning limit.
+            </p>
+          </details>
+        </aside>
+      </div>
+      <footer class="loaded-footer">
+        <p>
+          <strong>Keep this page open and visible.</strong> Browser alerts are
+          not an always-on background service. Monitoring pauses in hidden tabs;
+          closing the page stops it. Notifications require browser permission
+          and support.
+        </p>
+        <p>
+          Schedule discovery every 15s; live games in inning 9+ checked every 2s
+          after each scan. Feed delays or brief situations between polls can be
+          missed. History begins when you open this monitor; it is not a
+          full-game replay.
+        </p>
+        <div>
+          <span
+            >LOADED LATE <span class="footer-slash">/</span> Unofficial,
+            personal-use fan project</span
+          ><span>Data: MLB StatsAPI · Not affiliated with MLB</span>
+        </div>
+      </footer>
+    </main>
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/bases-loaded-core.js"></script>
+    <script src="assets/js/bases-loaded.js"></script>
+  </body>
 </html>
