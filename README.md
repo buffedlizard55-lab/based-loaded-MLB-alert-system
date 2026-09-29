@@ -120,7 +120,13 @@ documented alert projection still matches `api.js`, and that the repository ship
 competing Pages deployment. The last suite, `tools/deployed-site-test.mjs`, is the only
 network test of the four plus one: it fetches the published URL, its pages and its alert
 assets and fails if the deployed site drifts from this repository. CI runs it after every
-merge to `main` and nightly, never on a pull request.
+merge to `main` and nightly, never on a pull request. It can be dry-run against any
+server, which is how its own assertions are tested:
+
+```bash
+node server.mjs &                                   # or any static server on the root
+SITE_URL=http://localhost:8000/ node tools/deployed-site-test.mjs
+```
 
 ## Deploy this copy
 
@@ -297,6 +303,13 @@ line, so what was checked, what was corrected and what is still open is written 
   asserted there and reported as skipped for a slate that has not begun. Failures now
   also emit `::error` annotations, so a red job states which checks failed instead of
   only "exit code 1".
+- **Published-site check hardened by its own first CI run.** The first `main` run of
+  `tools/deployed-site-test.mjs` failed correctly but for a formatting reason: the
+  assertions matched the raw HTML, and a sentence written across two source lines
+  arrives with a newline inside it. The check now flattens whitespace before matching,
+  emits `::error`/`::warning` annotations naming each failure, and can be dry-run against
+  a local server (`SITE_URL=http://localhost:8000/`) — 18/18 pass against this
+  repository's own pages.
 - Deterministic suites after the change: rules 11,727 · monitor 74 · strip 160 · site
   258.
 

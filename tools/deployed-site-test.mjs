@@ -85,6 +85,16 @@ function unreachable(result) {
   return result && (result.status === 0 || result.status === 404);
 }
 
+/**
+ * Collapse whitespace before asserting on page text. The published HTML is
+ * indented, so a sentence written across two source lines arrives with a
+ * newline inside it; matching the raw body would fail on the page's formatting
+ * rather than on its content.
+ */
+function flat(text) {
+  return String(text || "").replace(/\s+/g, " ");
+}
+
 const started = Date.now();
 
 /* --------------------------------------------------------------- the pages */
@@ -102,21 +112,22 @@ if (indexOk) {
     "the published monitor still states the one situation it watches",
   );
   ok(
-    index.body.includes('id="board"') && index.body.includes('id="board-summary"'),
+    flat(index.body).includes('id="board"') &&
+      flat(index.body).includes('id="board-summary"'),
     "the published monitor ships the live slate (the newest feature reaches the public)",
   );
   ok(
-    index.body.includes("assets/css/bases-loaded.css") &&
-      index.body.includes("assets/js/bases-loaded.js"),
+    flat(index.body).includes("assets/css/bases-loaded.css") &&
+      flat(index.body).includes("assets/js/bases-loaded.js"),
     "the published monitor loads its stylesheet and controller with relative paths",
   );
   equal(
-    (index.body.match(/verification\.html/g) || []).length > 0,
+    (flat(index.body).match(/verification\.html/g) || []).length > 0,
     true,
     "the published monitor links the sources page",
   );
   ok(
-    index.body.includes('id="tied-count"'),
+    flat(index.body).includes('id="tied-count"'),
     "the published monitor ships the tied-in-a-final-half metric",
   );
 }
@@ -125,8 +136,8 @@ const basesLoaded = await get("bases-loaded.html");
 if (indexOk) {
   ok(
     basesLoaded?.status === 200 &&
-      basesLoaded.body.includes('id="board"') &&
-      basesLoaded.body.includes('id="tied-count"'),
+      flat(basesLoaded.body).includes('id="board"') &&
+      flat(basesLoaded.body).includes('id="tied-count"'),
     `bases-loaded.html is published and identical in structure (${basesLoaded?.status})`,
   );
 }
@@ -137,7 +148,7 @@ if (indexOk) {
     verification?.status === 200,
     `the sources page is published (${verification?.status})`,
   );
-  const page = verification?.body || "";
+  const page = flat(verification?.body);
   ok(
     /Every route to loaded bases/i.test(page),
     "the sources page still documents every route to loaded bases",
@@ -152,6 +163,10 @@ if (indexOk) {
   ok(
     page.includes("statsapi.mlb.com"),
     "the sources page still links the official MLB data endpoint",
+  );
+  ok(
+    page.includes("assets/js/bases-loaded-strip.js"),
+    "the sources page still loads the site-wide watch strip",
   );
 }
 
@@ -194,6 +209,13 @@ if (offline && allowOffline) {
 
 console.error(`✗ ${failures.length} published-site checks failed against ${siteRoot}`);
 for (const failure of failures) console.error(`  · ${failure}`);
+// Annotations make the failure readable in the checks UI (and through the
+// check-run API) instead of only "Process completed with exit code 1".
+console.log(
+  `::error title=Published site check::${failures.length} check(s) failed against ${siteRoot}`,
+);
+for (const failure of failures.slice(0, 8))
+  console.log(`::warning title=Published site check::${failure}`);
 if (offline) {
   console.error(
     "\nThe site could not be reached at all. If this is a sandbox without\n" +
