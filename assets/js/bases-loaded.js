@@ -497,11 +497,10 @@
     try {
       await discover();
       let newAlert = false;
-      const targets = [...games.values()].filter(
-        (game) =>
-          game.status?.abstractGameState === "Live" &&
-          (Number(game.linescore?.currentInning) >= 9 ||
-            states[game.gamePk]?.active),
+      // Same target rule as the site-wide strip (assets/js/bases-loaded-core.js):
+      // live games in inning 9+, plus any game already carrying an active watch.
+      const targets = [...games.values()].filter((game) =>
+        rules.scanTarget(game, states[game.gamePk]),
       );
       const targetIds = new Set(targets.map((g) => g.gamePk));
       for (const [pk, game] of games) {

@@ -2,7 +2,26 @@
 
 ## Scope
 
-The default page (`index.html`, also available at `bases-loaded.html`) runs **only** the tied / bases-loaded / bottom-9-or-later monitor. It does not load the legacy replay, scoring-change, forecast or scoreboard controllers. The copied original site's other pages are still available through navigation. The original scoreboard is `scoreboard.html`.
+The default page (`index.html`, also available at `bases-loaded.html`) runs **only** the tied / bases-loaded / bottom-9-or-later monitor. It does not load the legacy replay, scoring-change, forecast or scoreboard controllers. The copied original site's other pages are still available through navigation, and they additionally run the site-wide strip described below. The original scoreboard is `scoreboard.html`.
+
+## Site-wide strip (scoreboard, replay feed, game view)
+
+The dashboard is only useful when it is the tab you are looking at, so the same single situation is also watched from the other pages of this copy of the site. `scoreboard.html`, `reviews.html` and `game.html` load `assets/css/bases-loaded-strip.css`, `assets/js/bases-loaded-core.js` and `assets/js/bases-loaded-strip.js`; the strip mounts itself as the first element of `<body>`. It is not a second rule set — it calls the same `evaluate` / `observe` functions and the same scan-target rule as the monitor page. `index.html` and `bases-loaded.html` deliberately do **not** load it, so the dashboard never runs two watchers.
+
+| Observed state | Strip |
+| --- | --- |
+| Nothing late | One line: no tied bottom-9 situation, games on radar, last check time. Discovery only — no per-game requests. |
+| Tied game at the changeover into bottom 9+, or in a qualifying bottom half with one or two runners | Amber `WATCHING n` line and a row per game with inning, outs, count and exactly which bases are occupied (`1st & 2nd`, `2 bases to fill`), so progress toward loaded bases is visible rather than a binary. |
+| All three bases occupied, tied, bottom 9 or later | Red bar naming the situation and the inning, a fixed alert card (score, outs, count, batter/pitcher, tension, and the observed play that loaded them when the feed exposes it), plus the chime and one desktop notification when those are enabled. |
+| Unconfirmed, stale or failed snapshot | Counted on the bar with the reason in words; never shown as an all-clear, and never treated as "nothing is happening". |
+
+Shared state and de-duplication:
+
+- Same storage keys as the dashboard: `loaded-late:v3` (`history`, `states`) and `loaded-late:preferences` (`notifications`). A situation observed on any page appears in every page's history, and the notification opt-in is one setting for the whole site in that browser.
+- The shared log is re-read and merged by alert id at the moment an alert is about to be announced, so two open pages cannot both beep for one situation: the first observer chimes and notifies, the second records the same game + inning with `crossPage: true` and stays silent. `recentSharedAlert` is that 90-second quiet window; a **new inning is never suppressed**, and a future-dated log entry cannot suppress anything.
+- `?ll-demo=1` on any wired page runs six scripted snapshots (changeover → walk → single → intentional walk → bottom 12, two outs, full count → cleared) through the production rules engine. Demo mode makes no MLB requests and never writes the shared log, so it cannot pollute live history.
+
+Budget: two schedule requests (today and yesterday, America/New_York) every 30 seconds while no game is late, every 15 seconds once one is; one lean `feed/live` snapshot per late game every 5 seconds with four workers maximum; no per-game requests for early innings at all. A hidden tab stops polling and is labelled paused; returning scans immediately. The same practical limits as the monitor page apply — an open, visible tab is required, and a situation shorter than the polling interval can be missed.
 
 ## Decision table
 
@@ -44,13 +63,13 @@ There is deliberately **no event-description whitelist**. Hits, walks, intention
 4. Two schedule requests per 15 seconds, plus one lean snapshot per late-inning game per scan; no per-game requests for early innings. Schedule failures use the same discovery cadence. All calls use the existing API client's timeout and host-wide HTTP-429 `Retry-After` backoff.
 5. Pausing the tab stops new requests and marks displayed snapshots unconfirmed. Returning triggers discovery and a live scan. Closed pages do not run anything.
 
-`getAlertSnapshot()` lives in `assets/js/api.js`; pure rules live in `bases-loaded-core.js`; browser orchestration, rendering, controls and persistence live in `bases-loaded.js`.
+`getAlertSnapshot()` lives in `assets/js/api.js`; pure rules — including the scan-target, cadence, occupancy-label and shared-log helpers both front ends use — live in `bases-loaded-core.js`; the dashboard's orchestration, rendering, controls and persistence live in `bases-loaded.js`; the site-wide strip described above lives in `bases-loaded-strip.js`.
 
 The field projection was checked against a real final-game response from [MLB game 823001](https://statsapi.mlb.com/api/v1.1/game/823001/feed/live?fields=gamePk,gameData,status,abstractGameState,detailedState,statusCode,liveData,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,offense,first,second,third,id,fullName). Qualifying live cases are tested with synthetic official-shaped fixtures, not claimed as observed live alerts.
 
 ## Alert lifecycle and storage
 
-A first observed matching snapshot creates an immutable record containing game ID, names, tied score, inning, outs, runner IDs/names, and local observation time. Repeated polls do not create new records. The dedup state is game-specific and inning-specific. A **confirmed** exit from the condition re-arms the next match; an error or incomplete snapshot does not. A new qualifying inning is a new situation even if the monitor missed the intervening exit.
+A first observed matching snapshot creates an immutable record containing game ID, names, tied score, inning, outs, runner IDs/names, and local observation time. Records created by the site-wide strip are the same records: the dashboard and the strip write one shared log, so a game observed from the replay feed shows up in the monitor's history and vice versa. Repeated polls do not create new records. The dedup state is game-specific and inning-specific. A **confirmed** exit from the condition re-arms the next match; an error or incomplete snapshot does not. A new qualifying inning is a new situation even if the monitor missed the intervening exit.
 
 `localStorage['loaded-late:v2']` stores history and last observed dedup states. History retains up to 200 records within the past seven days. Restoring history never replays notifications. Original score/runner snapshots are never reconstructed from the game's current score. Storage failures do not disable live detection; the UI warns that persistence is unavailable.
 
@@ -69,8 +88,9 @@ MLB data-use terms and the inherited application's compliance notes still apply;
 ```sh
 node tools/bases-loaded-test.mjs
 node tools/bases-loaded-monitor-test.mjs
+node tools/bases-loaded-strip-test.mjs
 ```
 
-Tests cover inning/half/score/outs boundaries, all eight occupancy combinations, all listed routes without keyword inference, changeovers, walk-offs, final/delay status, incomplete data, immutable snapshots, dedup/re-arm/refresh, API projection, Eastern midnight/DST, failed polls, hidden-tab pause/resume, stale-state expiry, overlapping refresh, storage failures, opt-in notifications and isolated demo mode.
+Tests cover inning/half/score/outs boundaries, all eight occupancy combinations, all listed routes without keyword inference, changeovers, walk-offs, final/delay status, incomplete data, immutable snapshots, dedup/re-arm/refresh, API projection, Eastern midnight/DST, failed polls, hidden-tab pause/resume, stale-state expiry, overlapping refresh, storage failures, opt-in notifications and isolated demo mode. The strip suite adds the shared helpers (`scanTarget`, `pollCadence`, `recentSharedAlert`, `occupancyLabel`), the page-wiring contract (which pages mount the strip, which intentionally do not, and that `api.js` loads first), and a deterministic DOM/clock/API-stub run of the controller: watch line, partial occupancy, first alert, repeat polls, cleared-and-reloaded, extra innings 10–17, cross-page quiet window, fresh page load mid-situation, hidden-tab pause, cadence 30s/5s, stale and failed snapshots, blocked storage, a missing api client, dismissal and demo mode.
 
 `/?demo=1` or `bases-loaded.html?demo=1` runs nine manually advanced synthetic scenarios using the production rule engine. No MLB requests or live-history writes occur. The labeled demo includes a bottom-14 loaded tie. Demo notifications require explicit opt-in and carry a DEMO prefix.

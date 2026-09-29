@@ -25,6 +25,14 @@ jobs:
       - name: Render all-games replay feed against captured API payloads
         run: node tools/replay-feed-render-test.mjs
 
+      - name: Validate the tied / bases-loaded / bottom-9+ rules
+        run: node tools/bases-loaded-test.mjs
+
+      - name: Validate the situation monitor and the site-wide strip
+        run: |
+          node tools/bases-loaded-monitor-test.mjs
+          node tools/bases-loaded-strip-test.mjs
+
       - name: Validate in-review lean probe signature
         run: node tools/review-probe-test.mjs
 
