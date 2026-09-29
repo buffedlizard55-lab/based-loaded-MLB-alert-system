@@ -220,7 +220,7 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 6. **Live end-to-end proof still pending.** Deterministic suites cover 11,772 rule states
-   plus 99 monitor, 160 strip, 159 watcher, 112 deployment, 130 Web Push, 74 phone-alert,
+   plus 99 monitor, 160 strip, 173 watcher, 112 deployment, 130 Web Push, 74 phone-alert,
    153 installability and 347 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment, and no alert has yet arrived on a real
@@ -266,15 +266,21 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 2. **Live-fire verification:** on the next tied game entering bot 9+, keep the monitor
    visible and record watch → load → chime → notification with the game link as proof.
    The new live slate makes this easy to document (the row shows the exact snapshot age).
-3. ~~Always-on delivery (the big one)~~ **Shipped this session**: `tools/watcher.mjs`
-   requires `assets/js/bases-loaded-core.js` **verbatim** (no forked rules), polls the same
-   official endpoints, de-duplicates across restarts, writes a JSONL alert log carrying the
-   official snapshot URL, and pushes via a webhook or ntfy. Covered by
-   `tools/watcher-test.mjs` (159 checks, stubbed network and clock). Browser-grade **Web Push
-   (VAPID) shipped this session** — see the work item below. Still open, and honestly *not*
-   solved by that file: **someone still has to run it** on a machine that stays on. The recipes
-   and guide exist ([`deploy/`](deploy/), [docs/watcher-deployment.md](docs/watcher-deployment.md)),
-   but this repository has not observed a real always-on host keeping its own watch.
+3. ~~Always-on delivery (the big one)~~ **Shipped in session 2; fixed for real in session
+   4**: `tools/watcher.mjs` requires `assets/js/bases-loaded-core.js` **verbatim** (no
+   forked rules), polls the same official endpoints, de-duplicates across restarts, writes a
+   JSONL alert log carrying the official snapshot URL, and pushes via a webhook or ntfy.
+   **Session 4 found that as shipped the watcher could never alert** — its discovery URL
+   omitted `hydrate=linescore`, so the real schedule answered without the linescore the
+   scan rule reads — and fixed the URL, the suite stubs (which had been richer than the
+   real endpoint), the unused fast cadence, and the stale-state growth (session log below).
+   Covered by `tools/watcher-test.mjs` (173 checks, stubbed network and clock) and by a
+   nightly live guard on the discovery contract. Browser-grade **Web Push (VAPID) shipped in
+   session 2** — see the work item below. Still open, and honestly *not* solved by that
+   file: **someone still has to run it** on a machine that stays on (any deployment made
+   before session 4 must be redeployed from this commit). The recipes and guide exist
+   ([`deploy/`](deploy/), [docs/watcher-deployment.md](docs/watcher-deployment.md)), but
+   this repository has not observed a real always-on host keeping its own watch.
 4. ~~Wider alert context (due-up hitters).~~ **Shipped this session**, and widened only
    after verifying against a live payload: `linescore.offense.inHole` (the hitter after
    the on-deck hitter) is now part of the evaluated situation, the alert event, the
@@ -560,6 +566,55 @@ line, so what was checked, what was corrected and what is still open is written 
 - Suite totals after this session: rule suite 11,772 · monitor 99 · strip 160 · watcher 159 ·
   deploy 112 · Web Push 130 · phone alerts 74 · installability 153 · site 347 · published-site
   40 in a local dry run against `node server.mjs`.
+
+**Session 4 — live re-verification found the shipped watcher was blind; the discovery contract is fixed (2026-09-29)**
+
+- **Pass 1 — review and live re-verification.** All deterministic suites re-run locally and
+  green at session start (rule 11,772 · monitor 99 · strip 160 · watcher 159 · deploy 112 ·
+  Web Push 130 · phone alerts 74 · site 347 · installability 153). The session's page-fetch
+  path then re-checked every load-bearing external claim against the live official sources:
+  today's Wild Card slate (4 games) via `sportId=1&date=2026-09-29`; the exact
+  `getAlertSnapshot` projection against live game 849849 (status, linescore with count and
+  outs, `offense`/`defense` occupants, empty bases as absent keys, and the `defense.*`
+  upcoming-order quirk still present); the `hydrate=linescore` schedule; the
+  `mlb.com/gameday/849845` redirect landing on the canonical Gameday page; the verbatim
+  Rule 5.08(b) sentence at the cited rules site; the 2023 OBR PDF including the verbatim
+  Rule 7.01(b) extra-innings amendment; the umpirebible mirror; the MiLB extra-innings
+  article; and the MLB replay FAQ. All alive, all matching what this repository claims.
+- **Pass 2 — the bug the tests could not see.** Comparing the watcher's stubbed tests with
+  the real endpoint found that the watcher's discovery request used the **bare**
+  `/schedule` URL, and the live bare response carries **no linescore at all** — while
+  `scanTarget` reads `linescore.currentInning` to decide which games are late. A watcher
+  started from this repository therefore targeted no games and could never have alerted.
+  The 159-check suite stayed green because its stub answered the schedule with a fuller
+  shape than the real endpoint returns: the tests verified a contract the endpoint never
+  offered. This is the failure mode the brief names — a confident claim not grounded in the
+  official source — and it is recorded here rather than quietly fixed. The fix:
+  - `scheduleUrl()` now sends `hydrate=linescore`, verified live to return
+    `linescore.currentInning` for live games while leaving `teams.*.team.name` intact.
+    Anyone who deployed the watcher before this session should redeploy from this commit.
+  - The suite's schedule stub now mirrors the slim real shape, and the suite pins the
+    exact discovery URL, so the same class of drift fails the tests instead of shipping.
+- **Second bug, fixed in the same pass:** `WATCHER_LATE_MS` was loaded and announced in the
+  startup banner but never used — the loop slept the 15 s discovery cadence even while a
+  situation was live. `runCycle` now reports `late`, the loop delays by
+  `cycleDelayMs(summary, config)` (2 s while late), and the slate is cached between fast
+  cycles so a fast cycle spends zero schedule requests — the same discovery/snapshot split
+  the pages use, now shared in fact, not just in documentation.
+- **Shipped alongside:** stale-state pruning (an episode drops when its game leaves the
+  slate, so the state file stays the size of the slate instead of growing all season);
+  `--doctor` now proves the very discovery URL the watch depends on instead of the bare
+  endpoint; and the nightly live smoke job guards the `hydrate=linescore` contract against
+  the live API — a live game that stops carrying `currentInning` fails CI with an
+  annotation instead of silently blinding every watcher.
+- **Pass 3 — re-check.** Full suite re-run after the fix: watcher 159 → 173 checks, every
+  other suite unchanged and green; watcher counts quoted in `verification.html` (three
+  places) and in limitation 6 updated to match; the watcher claims in
+  `docs/bases-loaded-alerts.md` and `docs/watcher-deployment.md` re-read line by line and
+  now describe what the code actually does. Sandbox raw egress remains blocked, so the
+  nightly live smoke run stays the standing confirmation from a machine with normal egress.
+- Suite totals after this session: rule suite 11,772 · monitor 99 · strip 160 · watcher 173 ·
+  deploy 112 · Web Push 130 · phone alerts 74 · installability 153 · site 347.
 
 ## Original MLB Live PBP documentation
 
