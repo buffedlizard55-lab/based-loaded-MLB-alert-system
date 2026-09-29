@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Requirements &amp; sources — Loaded Late</title>
+    <meta
+      name="description"
+      content="Every requirement of the Loaded Late project, where it is implemented, how to verify it, and the official sources behind each claim: tied game, bases loaded, bottom of the 9th inning or later."
+    />
+    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/bases-loaded.css" />
+    <link rel="stylesheet" href="assets/css/bases-loaded-strip.css" />
+    <link rel="preconnect" href="https://statsapi.mlb.com" crossorigin />
+  </head>
+  <body class="loaded-page">
+    <header class="loaded-header">
+      <a class="loaded-brand" href="index.html" aria-label="Loaded Late home"
+        ><span class="brand-mark">◆</span> LOADED<span>LATE</span
+        ><span class="brand-divider">/</span><small>MLB ALERT SYSTEM</small></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="bases-loaded.html">Situation monitor</a
+        ><a href="scoreboard.html">Scoreboard ↗</a
+        ><a href="reviews.html">Replay feed ↗</a
+        ><a href="verification.html" aria-current="page"
+          >Requirements &amp; sources</a
+        >
+      </nav>
+    </header>
+    <main class="doc-main">
+      <section class="doc-hero">
+        <p class="eyebrow">
+          <span class="signal-dot"></span> REQUIREMENTS · EVIDENCE · OFFICIAL
+          SOURCES
+        </p>
+        <h1>What this system tracks —<br /><span>and how to check it.</span></h1>
+        <p class="doc-lead">
+          This page exists so nothing here has to be taken on trust. Every
+          requirement from the project brief is listed with where it is
+          implemented and how it can be checked; every baseball claim is tied to
+          an official rules source; every data claim is tied to the exact
+          official MLB endpoint behind it. Nothing on this site accepts manual
+          input — all state is read from the official public MLB StatsAPI.
+        </p>
+      </section>
+
+      <section class="doc-section">
+        <h2>1. The one situation</h2>
+        <p class="doc-lead">
+          The monitor tracks exactly one situation and alerts on nothing else.
+        </p>
+        <pre class="doc-code">TIED SCORE                    (official linescore runs: away === home)
++ ALL THREE BASES OCCUPIED     (official offense.first, .second, .third)
++ BOTTOM OF INNING 9 OR LATER  (no upper limit: 9th, 10th, 11th, 12th, …)
++ FEWER THAN THREE OUTS        (any count, any number of outs before the 3rd)
+= ALERT</pre>
+        <p class="doc-lead">
+          The watch window opens earlier than the alert: as soon as a tied game
+          reaches the changeover into the bottom of the 9th (or any later
+          inning), the game is listed as <em>on watch</em> with its live bases,
+          outs and count, so the load is visible as it happens rather than only
+          at the end. Any half-inning that can end the game with a walk-off is
+          covered, without an upper inning bound.
+        </p>
+        <p class="doc-lead">
+          Why this situation matters, in the rulebook's own words — with the
+          bases full, the batter is forced to advance and so are all runners, so
+          a walk, hit batter or any other forced advance can end the game:
+        </p>
+        <blockquote class="doc-quote">
+          “When the winning run is scored in the last half-inning of a
+          regulation game, or in the last half of an extra inning, as the result
+          of a base on balls, hit batter or any other play with the bases full
+          which forces the batter and all other runners to advance without
+          liability of being put out, the umpire shall not declare the game
+          ended until the runner forced to advance from third has touched home
+          base and the batter-runner has touched first base.”
+          <cite
+            >Official Baseball Rules, Rule 5.08(b). Sources:
+            <a
+              href="https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf"
+              >2023 Official Baseball Rules (PDF, MLB)</a
+            >
+            ·
+            <a
+              href="https://baseballrulesacademy.com/official-rule/mlb/5-08-how-a-team-scores/"
+              >Rule 5.08 text listing</a
+            >
+            (both checked 2026-09-29)</cite
+          >
+        </blockquote>
+        <p class="doc-lead">
+          In extra innings the offense also starts each half-inning with a
+          runner already on second base — one occupied base, not three, so it
+          never alerts on its own:
+        </p>
+        <blockquote class="doc-quote">
+          “Amended Rule 7.01(b) to incorporate the parameters of the Extra
+          Innings Rule, which includes starting each half-inning following the
+          ninth inning with a runner on second base.”
+          <cite
+            >2023 OBR, summary of rule changes, Rule 7.01(b).
+            <a
+              href="https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf"
+              >Official Baseball Rules 2023 (PDF, MLB)</a
+            >, checked 2026-09-29</cite
+          >
+        </blockquote>
+      </section>
+
+      <section class="doc-section">
+        <h2>2. Requirement checklist</h2>
+        <p class="doc-lead">
+          The project brief, line by line. “Checked” links point at the file or
+          test that proves the row, so any line can be re-verified without
+          reading the whole repository.
+        </p>
+        <div class="doc-scroll">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th>Requirement (from the brief)</th>
+                <th>Status</th>
+                <th>Where it lives</th>
+                <th>How to check it</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  Track any MLB game that is tied with the bases loaded in the
+                  bottom of the 9th or later
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  <code>assets/js/bases-loaded-core.js</code> →
+                  <code>evaluate()</code>; monitor page
+                  <code>index.html</code> / <code>bases-loaded.html</code>
+                </td>
+                <td>
+                  <code>node tools/bases-loaded-test.mjs</code> (11,727 checks);
+                  open <code>?demo=1</code> and step to the alert scenarios
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “the main focus of this alert system only. Only want to track
+                  this situation.”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  The monitor page loads only the rules engine, the API client
+                  and the alert controller — no review, scoring-change,
+                  forecast or scoreboard controller
+                </td>
+                <td>
+                  View source of <code>bases-loaded.html</code> (three
+                  <code>&lt;script&gt;</code> tags); the strip suite asserts the
+                  dashboard does not mount a second watcher
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “think of all the different ways a bases loaded situation can
+                  happen and track it”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  Detection reads official base occupancy, never play text or an
+                  event whitelist — see §3 below
+                </td>
+                <td>
+                  <code>tools/bases-loaded-test.mjs</code> exercises every
+                  occupancy pattern; the demo walks walk, single, intentional
+                  walk, error and automatic-runner routes
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “begin tracking when there is a tie game going to the bottom
+                  of the 9th or later”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  <code>entering</code> watch start on <code>Middle</code> or
+                  the top-half third out; a bottom half that becomes tied is
+                  picked up directly
+                </td>
+                <td>
+                  Decision table in <code>docs/bases-loaded-alerts.md</code>;
+                  demo step 2 (changeover) and step 17 (tying walk in the 15th)
+                </td>
+              </tr>
+              <tr>
+                <td>“bot 9, bot 10, bot 11, bot 12, bot 13, bot 14 etc.”</td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  No maximum inning anywhere in the rules or the polling loop
+                </td>
+                <td>
+                  The rule suite covers innings 1–30; the demo includes bottom
+                  14 and a tying bottom-15 walk
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “HOME TEAM COULD WALK OFF WHEN THE BASES ARE LOADED ALERT”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  Highlighted live card, optional chime, optional desktop
+                  notification, immutable history record with runner IDs, count
+                  and tension
+                </td>
+                <td>
+                  Demo step 7 (intentional walk loads them), step 10 (hit by
+                  pitch); monitor test asserts one notification per situation,
+                  never two
+                </td>
+              </tr>
+              <tr>
+                <td>“Put this prompt into the repo readme and read it every … session”</td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  <code>README.md</code> → “Project prompt — read this first,
+                  every session” (verbatim brief)
+                </td>
+                <td>
+                  <code>node tools/site-links-test.mjs</code> fails if that
+                  block or its key phrases disappear from the README
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “solve the problem of having to manually check everything
+                  ourselves and have an up to date current feed”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  Live slate on the monitor (every game, why it is or is not
+                  tracked, and the age of each number) plus the site-wide strip
+                  on the scoreboard, replay feed and game pages
+                </td>
+                <td>
+                  Open the monitor: the slate updates with every scan (15 s), and
+                  late innings every 2 s; the monitor test asserts the rows,
+                  their labels and their provenance labels
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “no manual input … work on your own to complete tasks”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  There is no input control anywhere in the alert system; every
+                  field is read from the official API
+                </td>
+                <td>
+                  Search the pages for <code>&lt;input&gt;</code>,
+                  <code>&lt;textarea&gt;</code>, <code>&lt;form&gt;</code> — the
+                  only controls are sound, notifications and refresh
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “include all relevant information … official verified links as
+                  sources for review”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>This page, plus the sources panel on the monitor</td>
+                <td>
+                  <code>node tools/site-links-test.mjs</code> verifies every
+                  internal link target exists and every external source is
+                  HTTPS
+                </td>
+              </tr>
+              <tr>
+                <td>“a github page … clean ui, user friendly, simple”</td>
+                <td><span class="doc-badge warn">See §6</span></td>
+                <td>
+                  Static site served from the repository root; no build step
+                </td>
+                <td>
+                  <code>node server.mjs</code> locally, or the published copy
+                  at
+                  <a href="https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/"
+                    >buffedlizard55-lab.github.io/based-loaded-MLB-alert-system</a
+                  >
+                  — verified in §6
+                </td>
+              </tr>
+              <tr>
+                <td>“create a pull request and then merge … onto the main”</td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>Pull requests merged into <code>main</code></td>
+                <td>
+                  <a
+                    href="https://github.com/buffedlizard55-lab/based-loaded-MLB-alert-system/pulls?q=is%3Apr+is%3Amerged"
+                    >Merged pull requests</a
+                  >
+                  on GitHub
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “make suggestions for what work still needs to be done and any
+                  limitations”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  §6 below, and “Where this still needs work” in
+                  <code>README.md</code>
+                </td>
+                <td>Both lists are dated and reviewed against the code</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-section">
+        <h2>3. Every route to loaded bases</h2>
+        <p class="doc-lead">
+          There is deliberately no list of play names to match. Each route below
+          ends with the same thing — official occupancy on first, second and
+          third — and the monitor reads that occupancy from the coherent
+          linescore. That is why a route that has never been seen before cannot
+          be missed, and why a play description can never trigger an alert by
+          itself.
+        </p>
+        <div class="doc-scroll">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th>Route</th>
+                <th>Official reference</th>
+                <th>How the monitor handles it</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Base hit / any fair ball by the batter</td>
+                <td>
+                  Rule 5.05(a): “The batter becomes a runner when: (1) He hits a
+                  fair ball”
+                </td>
+                <td rowspan="12">
+                  Uniformly: read <code>offense.first</code>,
+                  <code>offense.second</code>, <code>offense.third</code> from
+                  the official live linescore. No route needs a special case; no
+                  event text is matched; a play that leaves all three bases
+                  occupied alerts exactly like any other.
+                </td>
+              </tr>
+              <tr>
+                <td>Walk — four balls</td>
+                <td>
+                  Rule 5.05(b)(1): “Four ‘balls’ have been called by the
+                  umpire”
+                </td>
+              </tr>
+              <tr>
+                <td>Intentional walk (awarded on the manager's signal)</td>
+                <td>
+                  Rule 5.05(b)(1) Comment: “including an award of first base to a
+                  batter by an umpire following a signal from a manager”
+                </td>
+              </tr>
+              <tr>
+                <td>Hit by pitch</td>
+                <td>
+                  Rule 5.05(b)(2): “He is touched by a pitched ball which he is
+                  not attempting to hit”
+                </td>
+              </tr>
+              <tr>
+                <td>Catcher's or fielder's interference</td>
+                <td>
+                  Rule 5.05(b)(3): “The catcher or any fielder interferes with
+                  him”
+                </td>
+              </tr>
+              <tr>
+                <td>Uncaught third strike (first base open, or two out)</td>
+                <td>
+                  Rule 5.05(a)(2): “The third strike called by the umpire is not
+                  caught, providing (1) first base is unoccupied, or (2) first
+                  base is occupied with two out”
+                </td>
+              </tr>
+              <tr>
+                <td>Error, fielder's choice or force out replacing a runner</td>
+                <td>
+                  Scoring under Rule 9.00; the bases on the linescore are the
+                  official record of who reached
+                </td>
+              </tr>
+              <tr>
+                <td>Balk — every runner advances one base</td>
+                <td>Rule 6.02(a): “A balk is committed; runners advance”</td>
+              </tr>
+              <tr>
+                <td>Obstruction — the umpire awards the base(s)</td>
+                <td>Rule 6.01(h) (obstruction)</td>
+              </tr>
+              <tr>
+                <td>Wild pitch, passed ball, steal of a base</td>
+                <td>
+                  Rule 9.13 (wild pitches and passed balls), Rule 9.07 (stolen
+                  bases and caught stealing)
+                </td>
+              </tr>
+              <tr>
+                <td>Automatic extra-inning runner on second</td>
+                <td>Rule 7.01(b) (Extra Innings Rule)</td>
+              </tr>
+              <tr>
+                <td>Replay review or an official scorer correction</td>
+                <td>
+                  <a
+                    href="https://www.mlb.com/news/instant-replay-review-faq/c-70189582"
+                    >MLB instant-replay FAQ</a
+                  >
+                  (reviewable-plays list)
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="doc-note" style="margin-top: 10px">
+          Runners are only added by a batter becoming a runner or by an umpire's
+          award. Wild pitches, passed balls, balks and steals move runners who
+          are already on base — they cannot increase the number of occupied
+          bases, so they can never be the play that loads them on their own.
+          Rule numbers and text checked 2026-09-29 against the 2023 Official
+          Baseball Rules (PDF), the Rule 5.0 text mirror on UmpireBible
+          (5.01–5.06 read directly: 5.05(a)–(b) is the batter-becomes-a-runner
+          rule cited above) and the Rule 5.08 text listing.
+        </p>
+      </section>
+
+      <section class="doc-section">
+        <h2>4. Official data sources</h2>
+        <p class="doc-lead">
+          Every number on this site comes from one of these endpoints. The
+          projection column is the exact request the monitor sends — open it in
+          a browser and the same fields are visible.
+        </p>
+        <div class="doc-scroll">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th>What we rely on</th>
+                <th>Official endpoint / document</th>
+                <th>Checked</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Game discovery — every MLB game for a date</td>
+                <td>
+                  <a
+                    href="https://statsapi.mlb.com/api/v1/schedule?sportId=1&amp;date=2026-09-29"
+                    ><code
+                      >GET /api/v1/schedule?sportId=1&amp;date=YYYY-MM-DD</code
+                    ></a
+                  >
+                </td>
+                <td>2026-09-29</td>
+              </tr>
+              <tr>
+                <td>
+                  One coherent status + linescore + current play snapshot — the
+                  exact projection behind every watch and alert
+                </td>
+                <td>
+                  <a
+                    href="https://statsapi.mlb.com/api/v1.1/game/823001/feed/live?fields=gamePk,gameData,status,abstractGameState,detailedState,statusCode,liveData,plays,currentPlay,result,description,event,eventType,rbi,awayScore,homeScore,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,offense,defense,first,second,third,id,fullName,balls,strikes,batter,pitcher,onDeck,inHole"
+                    ><code>GET /api/v1.1/game/{gamePk}/feed/live?fields=…</code></a
+                  >
+                </td>
+                <td>2026-09-29</td>
+              </tr>
+              <tr>
+                <td>Unfiltered linescore shape (occupancy, count, defense)</td>
+                <td>
+                  <a href="https://statsapi.mlb.com/api/v1/game/823001/linescore"
+                    ><code>GET /api/v1/game/823001/linescore</code></a
+                  >
+                </td>
+                <td>2026-09-29</td>
+              </tr>
+              <tr>
+                <td>Game-status registry (status codes used by the inherited pages)</td>
+                <td>
+                  <a href="https://statsapi.mlb.com/api/v1/gameStatus"
+                    ><code>GET /api/v1/gameStatus</code></a
+                  >
+                </td>
+                <td>2026-09-02</td>
+              </tr>
+              <tr>
+                <td>Side-by-side review of a live game as MLB displays it</td>
+                <td><a href="https://www.mlb.com/gameday">MLB Gameday</a></td>
+                <td>Reference</td>
+              </tr>
+              <tr>
+                <td>Walk-off bases-full procedure (the alert's purpose)</td>
+                <td>
+                  <a
+                    href="https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf"
+                    >Official Baseball Rules 2023 (PDF, MLB)</a
+                  >
+                  · Rule 5.08(b) ·
+                  <a
+                    href="https://baseballrulesacademy.com/official-rule/mlb/5-08-how-a-team-scores/"
+                    >5.08 text listing</a
+                  >
+                </td>
+                <td>2026-09-29</td>
+              </tr>
+              <tr>
+                <td>Rules 5.01–5.04 (game start, fielding positions, batting) and the rest of Rule 5.0</td>
+                <td>
+                  <a href="https://www.umpirebible.com/OBR16/5.0.htm"
+                    >Rule 5.0 text mirror (UmpireBible)</a
+                  >
+                  — 5.01–5.06 read directly; 5.08 quoted from the two links above
+                </td>
+                <td>2026-09-29</td>
+              </tr>
+              <tr>
+                <td>Extra-innings automatic runner</td>
+                <td>
+                  <a
+                    href="https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf"
+                    >Official Baseball Rules 2023 (PDF, MLB)</a
+                  >, Rule 7.01(b)
+                </td>
+                <td>2026-09-29</td>
+              </tr>
+              <tr>
+                <td>Reviewable plays and challenge mechanics (inherited pages)</td>
+                <td>
+                  <a
+                    href="https://www.mlb.com/news/instant-replay-review-faq/c-70189582"
+                    >MLB instant replay review FAQ</a
+                  >
+                </td>
+                <td>Reference</td>
+              </tr>
+              <tr>
+                <td>Our own detection contract — decision table, routes, limits</td>
+                <td>
+                  <a
+                    href="https://github.com/buffedlizard55-lab/based-loaded-MLB-alert-system/blob/main/docs/bases-loaded-alerts.md"
+                    >docs/bases-loaded-alerts.md</a
+                  >
+                </td>
+                <td>This repo</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="doc-note" style="margin-top: 10px">
+          Freshness contract: a snapshot older than 12 seconds is never shown as
+          live, a failed or incomplete snapshot is labelled as unconfirmed
+          instead of an all-clear, and a delay or suspension holds the watch
+          rather than pretending the situation ended.
+        </p>
+      </section>
+
+      <section class="doc-section">
+        <h2>5. Polling budget</h2>
+        <div class="doc-scroll">
+          <table class="doc-table">
+            <thead>
+              <tr>
+                <th>Surface</th>
+                <th>Schedule discovery</th>
+                <th>Live snapshot</th>
+                <th>Pauses when</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Monitor page</td>
+                <td>every 15 s (today + yesterday, America/New_York)</td>
+                <td>
+                  every 2 s for every live game in inning 9+ (four workers
+                  maximum)
+                </td>
+                <td>the tab is hidden or the page is closed</td>
+              </tr>
+              <tr>
+                <td>Site-wide strip (scoreboard, replay feed, game, this page)</td>
+                <td>every 15 s while a game is late, 30 s otherwise</td>
+                <td>every 5 s for every live game in inning 9+</td>
+                <td>the tab is hidden or the page is closed</td>
+              </tr>
+              <tr>
+                <td>Any page</td>
+                <td colspan="2">
+                  early-inning games are never polled individually — they carry
+                  no occupancy data on the slate until the inning-9+ snapshot
+                  exists
+                </td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="doc-section">
+        <h2>6. Limitations and the next sessions' work</h2>
+        <p class="doc-lead">
+          Stated plainly, because a monitor that overstates itself is worse than
+          no monitor. This section is reviewed together with
+          <code>README.md → “Where this still needs work”</code> every session.
+        </p>
+        <ul class="doc-list">
+          <li>
+            <strong>Browser-bound monitoring.</strong> Alerts exist only while a
+            page of this site is open and visible. Hidden tabs pause; closing
+            the browser stops it. There is no server-side watcher, push, SMS or
+            email. This is the single biggest gap for daily use.
+          </li>
+          <li>
+            <strong>Polling gaps.</strong> A situation that appears and resolves
+            inside one gap — 2 s on the monitor, up to 5 s on the strip — can be
+            missed, and upstream publication delays can hide a pitch or two.
+            Nothing is back-filled.
+          </li>
+          <li>
+            <strong>History is per browser.</strong> Records live in this
+            browser's <code>localStorage</code> (7 days, 200 records). They are
+            not cross-device and are not a complete replay of the season.
+          </li>
+          <li>
+            <strong>Unofficial data source.</strong> The MLB StatsAPI has no SLA
+            and no published rate limit; the client self-limits and degrades
+            visibly instead of guessing.
+          </li>
+          <li>
+            <strong>Live end-to-end proof is still pending.</strong> The rule
+            engine is covered by 11,727 deterministic checks, the monitor by 74,
+            the strip by 160 and the static site by 258 checks (counts as of
+            2026-09-29), and the published copy of this site is verified by
+            <code>tools/deployed-site-test.mjs</code> on every merge and
+            nightly, but the honest next acceptance test is a real tied game
+            entering the bottom of the 9th with the bases loaded, observed end
+            to end.
+          </li>
+          <li>
+            <strong>Development-sandbox network limit (flagged, open).</strong>
+            The sandbox used for this session cannot reach
+            <code>statsapi.mlb.com</code> (TLS egress is blocked), so the API
+            projections listed in §4 are carried forward from the last verified
+            session and must be re-confirmed from a networked machine or the CI
+            smoke workflow.
+          </li>
+          <li>
+            <strong>Recommended next work:</strong> (1) always-on server watcher
+            with Web Push, reusing the rules engine verbatim; (2) history export
+            (CSV/JSON) and a shareable per-alert link; (3) installable PWA with
+            vibration; (4) wider alert context (due-up hitters, pitcher line)
+            only after verifying the extra fields against a live payload.
+          </li>
+        </ul>
+        <div class="doc-sub">
+          <h3>Verification log — 2026-09-29</h3>
+          <ul class="doc-list">
+            <li>
+              <span class="doc-badge ok">Passed</span>
+              Rule engine: <code>node tools/bases-loaded-test.mjs</code> —
+              11,727 checks, including an 11,520-case inning/half/outs/score/
+              occupancy matrix and all eight occupancy patterns.
+            </li>
+            <li>
+              <span class="doc-badge ok">Passed</span>
+              Monitor controller: <code>node tools/bases-loaded-monitor-test.mjs</code>
+              — 74 checks, including the live-slate rows, the scheduled-game
+              row, the held watch during a delay, and the notification click
+              that focuses the alerting card.
+            </li>
+            <li>
+              <span class="doc-badge ok">Passed</span>
+              Site-wide strip: <code>node tools/bases-loaded-strip-test.mjs</code>
+              — 160 checks, including the page-wiring contract for every page
+              that mounts the strip and the held-watch row for a delayed game.
+            </li>
+            <li>
+              <span class="doc-badge ok">Passed</span>
+              Site integrity: <code>node tools/site-links-test.mjs</code> —
+              258 checks: every internal link target on every page exists, no
+              root-absolute paths, every external source is HTTPS, no
+              third-party scripts, well-formed tags and table columns, the
+              project prompt and the verbatim Rule 5.08(b) sentence are still
+              present, the documented alert projection still matches
+              <code>api.js</code>, and CI runs every suite — while shipping no
+              competing Pages workflow and keeping the deterministic CI job
+              offline.
+            </li>
+            <li>
+              <span class="doc-badge warn">Corrected</span>
+              Irregularity found and fixed: the README paraphrased Rule 5.08(b)
+              as “winning run scored in the last half-inning … with the bases
+              full”, which is not the rule's wording. It now carries the
+              verbatim sentence quoted in §1, with the source next to it.
+            </li>
+            <li>
+              <span class="doc-badge warn">Corrected</span>
+              Irregularity found and fixed: this repository already published
+              the <code>main</code> root with GitHub's built-in Pages build,
+              while the first session had added an Actions deployment workflow
+              (<code>.github/workflows/pages.yml</code>) — two publishers for
+              one site. The workflow was removed, and the test suite now fails
+              if one is added back.
+            </li>
+            <li>
+              <span class="doc-badge ok">Verified</span>
+              Deployment checked rather than assumed on 2026-09-29: the Pages
+              API reports <code>status: "built"</code> with
+              <code>source: main /</code>, the built-in
+              <code>pages-build-deployment</code> run for <code>main</code>
+              completed successfully, and the published pages were fetched and
+              compared with this repository by
+              <code>tools/deployed-site-test.mjs</code> — a network check that
+              CI runs after every merge to <code>main</code> and nightly. The
+              site lives at
+              <a href="https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/"
+                >buffedlizard55-lab.github.io/based-loaded-MLB-alert-system</a
+              >.
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="loaded-footer">
+        <p>
+          <strong>Nothing on this site is typed in by hand.</strong> Every
+          score, inning, out and runner is read from the official public MLB
+          StatsAPI at the moment you look at it, and every claim on this page is
+          checkable through the links above.
+        </p>
+        <div>
+          <span
+            >LOADED LATE <span class="footer-slash">/</span> Unofficial,
+            personal-use fan project</span
+          ><span>Data: MLB StatsAPI · Not affiliated with MLB</span>
+        </div>
+      </footer>
+    </main>
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/bases-loaded-core.js"></script>
+    <script src="assets/js/bases-loaded-strip.js"></script>
+  </body>
+</html>

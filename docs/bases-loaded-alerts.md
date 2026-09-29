@@ -2,6 +2,8 @@
 
 ## Scope
 
+> Checkable summary of every requirement and source: [`verification.html`](../verification.html).
+
 The default page (`index.html`, also available at `bases-loaded.html`) runs **only** the tied / bases-loaded / bottom-9-or-later monitor. It does not load the legacy replay, scoring-change, forecast or scoreboard controllers. The copied original site's other pages are still available through navigation, and they additionally run the site-wide strip described below. The original scoreboard is `scoreboard.html`.
 
 ## Site-wide strip (scoreboard, replay feed, game view)
@@ -14,6 +16,7 @@ The dashboard is only useful when it is the tab you are looking at, so the same 
 | Tied game at the changeover into bottom 9+, or in a qualifying bottom half with one or two runners | Amber `WATCHING n` line and a row per game with inning, outs, count and exactly which bases are occupied (`1st & 2nd`, `2 bases to fill`), so progress toward loaded bases is visible rather than a binary. |
 | All three bases occupied, tied, bottom 9 or later | Red bar naming the situation and the inning, a fixed alert card (score, outs, count, batter/pitcher, tension, and the observed play that loaded them when the feed exposes it), plus the chime and one desktop notification when those are enabled. |
 | Unconfirmed, stale or failed snapshot | Counted on the bar with the reason in words; never shown as an all-clear, and never treated as "nothing is happening". |
+| Delayed or suspended while tied in the 9th or later | `WATCH HELD` on the bar plus a `PAUSED` detail row. The episode stays armed, so resuming play cannot create a duplicate alert and the situation cannot be lost while play is stopped. |
 
 Shared state and de-duplication:
 
@@ -22,6 +25,21 @@ Shared state and de-duplication:
 - `?ll-demo=1` on any wired page runs six scripted snapshots (changeover → walk → single → intentional walk → bottom 12, two outs, full count → cleared) through the production rules engine. Demo mode makes no MLB requests and never writes the shared log, so it cannot pollute live history.
 
 Budget: two schedule requests (today and yesterday, America/New_York) every 30 seconds while no game is late, every 15 seconds once one is; one lean `feed/live` snapshot per late game every 5 seconds with four workers maximum; no per-game requests for early innings at all. A hidden tab stops polling and is labelled paused; returning scans immediately. The same practical limits as the monitor page apply — an open, visible tab is required, and a situation shorter than the polling interval can be missed.
+
+## Live slate (monitor page)
+
+The monitor also renders one row per game on the slate so nothing has to be checked by
+hand. Each row carries the official score and half-inning, a tracking reason
+(`BASES LOADED · ALERT`, `ON WATCH · 1st & 2nd · 1 to fill`, `TIED · TOP HALF · HOME
+STILL TO BAT`, `PAUSED · STILL TIED · WATCH HELD`, `NOT YET INNING 9`, `FINAL`,
+`SCHEDULED`), and the provenance and age of its numbers (`live snapshot · 3s ago`,
+`official schedule scan`, or the failure reason). Alerting games sort first. A game
+that has no coherent snapshot yet is labelled *late inning · awaiting the first live
+snapshot* and is **never** given occupancy the schedule scan does not carry — the slate
+shows the scan's own fields (score, inning, half, outs) and defers the rest.
+
+Clicking a desktop notification focuses the monitor and outlines the card for that
+game (`HIGHLIGHT_MS`, 8 s) without navigating away, so the watcher keeps running.
 
 ## Decision table
 

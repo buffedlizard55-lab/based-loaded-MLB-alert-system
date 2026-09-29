@@ -100,7 +100,9 @@ function boot({
       return this.permission;
     }
     constructor(title, options) {
-      notices.push({ title, ...options });
+      // Keep the instance itself: the controllers attach `onclick`, and the
+      // click path (focus + highlight the alerting card) is part of the UI.
+      notices.push(Object.assign(this, { title }, options));
     }
     close() {}
   }
@@ -493,5 +495,181 @@ check(
   multi.nodes["history-count"].textContent,
   5,
   "One historical record per matching game",
+);
+
+/* ==========================================================================
+ * Live slate board, held watches and notification focus (2026-09-29)
+ * ======================================================================== */
+
+check(
+  multi.nodes["tied-count"].textContent,
+  5,
+  "Tied bottom-9+ metric counts every game in the window",
+);
+check(
+  multi.nodes.board.innerHTML.split('class="board-row').length - 1,
+  7,
+  "Live slate lists every game on radar",
+);
+check(
+  multi.nodes.board.innerHTML.indexOf("BASES LOADED · ALERT") <
+    multi.nodes.board.innerHTML.indexOf("TIED · CHANGE OVER") ||
+    !multi.nodes.board.innerHTML.includes("TIED · CHANGE OVER"),
+  true,
+  "Alerting games sort to the top of the slate",
+);
+check(
+  multi.nodes.board.innerHTML.includes("live snapshot ·"),
+  true,
+  "Slate rows carry the provenance and age of their numbers",
+);
+check(
+  multi.nodes["board-summary"].textContent.includes("schedule scan 15s"),
+  true,
+  "Slate summary states the scan cadence",
+);
+
+/** Rows are delimited by their wrapper, so a single row can be inspected. */
+const boardRows = (html) => html.split('class="board-row').slice(1);
+
+const boardFixture = (pk, name, inning, state, extra = {}) => {
+  const game = fixture();
+  game.gamePk = pk;
+  game.teams.away.team.name = `${name} AWY`;
+  game.teams.home.team.name = `${name} HOM`;
+  Object.assign(game.linescore, {
+    currentInning: inning,
+    inningState: state,
+    // The half-inning flag must agree with the state string: the rules engine
+    // rejects contradictory snapshots as unknown rather than guessing.
+    isTopInning: state === "Top",
+    outs: 1,
+    offense: {},
+  }, extra);
+  return game;
+};
+const early = boardFixture(2001, "Early", 4, "Top");
+const lateTop = boardFixture(2002, "LateTop", 9, "Top");
+const finished = boardFixture(2003, "Done", 9, "End", { outs: 3 });
+finished.status = { abstractGameState: "Final", detailedState: "Final" };
+const scheduled = {
+  gamePk: 2004,
+  gameDate: "2026-09-29T23:05:00Z",
+  status: { abstractGameState: "Preview", detailedState: "Scheduled" },
+  teams: {
+    away: { team: { name: "Sched AWY" } },
+    home: { team: { name: "Sched HOM" } },
+  },
+  linescore: {},
+};
+const boardApp = boot({ multiple: [early, lateTop, finished, scheduled] });
+await settle();
+check(
+  boardApp.state.snapshotCalls,
+  1,
+  "Only live inning-9+ games get a per-game live snapshot",
+);
+const earlyRow = boardRows(boardApp.nodes.board.innerHTML).find((row) =>
+  row.includes("Early AWY"),
+);
+check(
+  /1st|2nd|3rd|Loaded/.test(earlyRow || ""),
+  false,
+  "An early game is never given occupancy the scan does not confirm",
+);
+check(
+  (earlyRow || "").includes("NOT YET INNING 9") &&
+    (earlyRow || "").includes("official schedule scan"),
+  true,
+  "Early games are labelled and sourced on the slate",
+);
+check(
+  boardApp.nodes.board.innerHTML.includes("TIED · TOP HALF · HOME STILL TO BAT"),
+  true,
+  "A tied top half is shown as not yet batting",
+);
+check(
+  boardApp.nodes.board.innerHTML.includes("AWAITING THE FIRST LIVE SNAPSHOT"),
+  false,
+  "A game with a live snapshot is never left in an unknown state",
+);
+check(
+  boardApp.nodes["tied-count"].textContent,
+  0,
+  "A tied top half is not counted as a qualifying bottom half",
+);
+const scheduledRow = boardRows(boardApp.nodes.board.innerHTML).find((row) =>
+  row.includes("Sched AWY"),
+);
+check(
+  (scheduledRow || "").includes("SCHEDULED") &&
+    (scheduledRow || "").includes("first pitch") &&
+    (scheduledRow || "").includes("official schedule"),
+  true,
+  "A scheduled game shows its start time and is sourced from the schedule",
+);
+
+const rain = boardFixture(3001, "Rain", 10, "Bottom", {
+  offense: { first: { id: 1 }, second: { id: 2 } },
+});
+rain.status = { abstractGameState: "Live", detailedState: "Delayed" };
+const pausedApp = boot({ multiple: [rain] });
+await settle();
+check(pausedApp.nodes["active-count"].textContent, 0, "A delay is not an alert");
+check(
+  pausedApp.nodes.watch.innerHTML.includes("PAUSED") &&
+    pausedApp.nodes.watch.innerHTML.includes("watch window is held"),
+  true,
+  "A delayed tied game is shown as a held watch, not dropped",
+);
+check(
+  pausedApp.nodes["tied-count"].textContent,
+  1,
+  "The held watch still counts as a tied bottom-9+ game",
+);
+check(
+  pausedApp.nodes.board.innerHTML.includes("PAUSED · STILL TIED · WATCH HELD"),
+  true,
+  "The slate explains the paused row",
+);
+
+/* A fresh monitor, so the highlight check runs against a live alert. */
+const focusApp = boot();
+await settle();
+await focusApp.click("notify");
+focusApp.state.game.linescore = {
+  ...focusApp.state.game.linescore,
+  inningState: "Bottom",
+  isTopInning: false,
+  outs: 1,
+  offense: {
+    first: { id: 1, fullName: "A" },
+    second: { id: 2, fullName: "B" },
+    third: { id: 3, fullName: "C" },
+  },
+};
+await focusApp.click("refresh");
+check(
+  focusApp.nodes.current.innerHTML.includes("card-highlight"),
+  false,
+  "No card is highlighted before a notification is clicked",
+);
+focusApp.notices[0].onclick();
+check(
+  focusApp.nodes.current.innerHTML.includes("card-highlight") &&
+    focusApp.nodes.current.innerHTML.includes("game.html?gamePk=123"),
+  true,
+  "Clicking the notification focuses and highlights that game's card",
+);
+await focusApp.tick();
+check(
+  focusApp.nodes["active-count"].textContent,
+  1,
+  "Highlighting never changes the tracked state",
+);
+check(
+  focusApp.nodes["history-count"].textContent,
+  1,
+  "Highlighting never writes a second alert record",
 );
 console.log(`✓ ${checks} bases-loaded monitor integration checks passed`);

@@ -598,7 +598,7 @@ probe a no-op.
 | `tools/review-status-test.mjs` (new, 11 sections) | registry integrity (47 rows, verbatim `detailedState`/`reason`, M↔N reason agreement); `isReviewGameStatus` true for all 47 and false for 16 real non-review states; **all four self-contained copies** (reviews-feed / game / scoreboard / ui) agree with `MLBReviews` over the whole registry; `normalizeType` codes; `reviewStatusInfo`; `extractReviews` synthesizing an in-progress row from status alone for MA/IH/NA/NH/MJ with the official reason; `reviewStatusFlips`; `reviewFetchPriority`; and §10, which asserts the old word match really does miss `"Instant Replay"` |
 | `tools/review-watcher-test.mjs` (new) | drives the **real boot path** with fake timers: boot sweep, status-only window (banner + strip up before any play text exists), out-of-band scan on a flip, run-at-risk from a status-only review, code-change = new event, no extra scan when nothing changed, silent failure, hidden-tab pause, and §4b (a slow game elsewhere in the slate does not hold back another game's banner) |
 | `tools/smoke-test.mjs` (+3 sections, CI/live) | re-reads `/api/v1/gameStatus` and **diffs it against the hardcoded table** (missing, stale, or drifted rows all fail); asserts the projection is ≥5× smaller than the hydrated schedule; asserts the per-game projection returns status only |
-| `docs/workflows/smoke.yml` | both new tools added to the nightly run |
+| `.github/workflows/smoke.yml` | both new tools added to the nightly CI run |
 
 **Mutation-verified** (each mutation was applied, the suite run, and the file
 restored): reverting `isReviewGameStatus` to the word match fails §2 on `IH`;

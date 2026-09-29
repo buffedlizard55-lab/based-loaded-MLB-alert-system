@@ -330,7 +330,7 @@
 /* Metrics bar — 5 columns now (added tension) */
 .monitor-metrics {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   border: 1px solid var(--line);
   border-radius: 8px;
   margin: 26px 0 36px;
@@ -367,6 +367,9 @@
 }
 .metric-tension strong {
   color: var(--tension-max);
+}
+.metric-tied strong {
+  color: #f0c469;
 }
 
 .monitor-columns {
@@ -997,5 +1000,316 @@
   }
   .monitor-metrics > div:last-child {
     border-bottom: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- live slate
+ * Every game on the slate, with its tracking reason and the provenance of
+ * each number. Rows are read-only text plus one link to the game page.
+ */
+.section-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 74ch;
+}
+.board {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #151d1e;
+}
+.board-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1.3fr) minmax(0, 1.4fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1e2728;
+  font-size: 12px;
+}
+.board-row:last-child {
+  border-bottom: 0;
+}
+.board-row b {
+  color: #fff;
+  font-weight: 600;
+}
+.board-when {
+  color: #a9b6b2;
+  font-variant-numeric: tabular-nums;
+}
+.board-tag {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #9fb0aa;
+}
+.board-source {
+  font-size: 10px;
+  color: #6f7d7a;
+}
+.board-row a {
+  font-size: 10px;
+  color: var(--lime);
+  white-space: nowrap;
+}
+.board-row.tag-alert {
+  background: rgba(224, 49, 49, 0.14);
+  box-shadow: inset 3px 0 0 var(--tension-max);
+}
+.board-row.tag-alert .board-tag {
+  color: var(--tension-max);
+}
+.board-row.tag-watch {
+  background: rgba(224, 192, 64, 0.08);
+  box-shadow: inset 3px 0 0 var(--tension-mid);
+}
+.board-row.tag-watch .board-tag {
+  color: #e0c040;
+}
+.board-row.tag-paused {
+  background: rgba(224, 128, 48, 0.07);
+  box-shadow: inset 3px 0 0 #7c6a5c;
+}
+.board-row.tag-paused .board-tag {
+  color: #e0a06a;
+}
+.board-row.tag-tied .board-tag,
+.board-row.tag-late .board-tag {
+  color: #cbd6cf;
+}
+.board-row.tag-final,
+.board-row.tag-scheduled {
+  color: #95a29e;
+}
+.board-row.tag-early {
+  color: #9aa7a3;
+}
+.board-summary {
+  margin: 8px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: #6f7d7a;
+}
+
+/* A paused/delayed tied game in the watch window: held, never dropped. */
+.paused-note {
+  border-left: 3px solid #7c6a5c;
+}
+.paused-note strong {
+  display: block;
+  color: #e0a06a;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  margin-bottom: 4px;
+}
+
+/* Clicking an alert notification highlights the card it belongs to. */
+.card-highlight {
+  animation: card-pulse 1.4s ease-in-out 3;
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+@keyframes card-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(207, 239, 120, 0);
+  }
+  50% {
+    box-shadow: 0 0 28px 2px rgba(207, 239, 120, 0.45);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-highlight {
+    animation: none;
+  }
+}
+@media (max-width: 1000px) {
+  .board-row {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  }
+  .board-source {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .board-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .board-source {
+    display: block;
+  }
+}
+
+/* --------------------------------------------- Requirements & sources page
+ * A documentation page in the same visual language as the monitor: same
+ * tokens, same header, readable tables, and an honest status badge for every
+ * requirement.
+ */
+.doc-main {
+  max-width: 1080px;
+  padding: 0 36px 70px;
+  margin: auto;
+}
+.doc-hero {
+  padding: 46px 0 10px;
+}
+.doc-hero h1 {
+  font-size: 40px;
+  line-height: 1.08;
+  letter-spacing: -1.4px;
+  margin: 10px 0 14px;
+}
+.doc-hero h1 span {
+  color: var(--lime);
+}
+.doc-section {
+  margin-top: 42px;
+}
+.doc-section h2 {
+  font-size: 19px;
+  letter-spacing: -0.4px;
+  margin: 0 0 6px;
+}
+.doc-section h3 {
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #a9b6b2;
+  margin: 22px 0 8px;
+}
+.doc-lead {
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--muted);
+  max-width: 86ch;
+  margin: 0 0 14px;
+}
+.doc-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151d1e;
+}
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 640px;
+}
+.doc-table th {
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9fb0aa;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #171f20;
+  font-weight: 700;
+}
+.doc-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid #1e2728;
+  vertical-align: top;
+  line-height: 1.65;
+  color: #dde5df;
+}
+.doc-table tr:last-child td {
+  border-bottom: 0;
+}
+.doc-table td:first-child {
+  color: #fff;
+}
+.doc-table code {
+  font-size: 11px;
+  color: var(--lime);
+}
+.doc-quote {
+  margin: 12px 0;
+  padding: 15px 18px;
+  border-left: 3px solid var(--lime);
+  background: #151d1e;
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: #e6ece5;
+}
+.doc-quote cite {
+  display: block;
+  margin-top: 9px;
+  font-size: 10px;
+  color: var(--muted);
+  font-style: normal;
+  letter-spacing: 0.4px;
+}
+.doc-code {
+  background: #0b1112;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--lime);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin: 0 0 14px;
+}
+.doc-list {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #dde5df;
+}
+.doc-list li {
+  margin-bottom: 7px;
+}
+.doc-badge {
+  display: inline-block;
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.doc-badge.ok {
+  background: rgba(122, 182, 72, 0.16);
+  color: #a9d77f;
+}
+.doc-badge.warn {
+  background: rgba(224, 128, 48, 0.16);
+  color: #e0a06a;
+}
+.doc-badge.open {
+  background: rgba(224, 49, 49, 0.16);
+  color: #ef8f8f;
+}
+.doc-note {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.doc-sub {
+  border-top: 1px solid var(--line);
+  margin-top: 34px;
+  padding-top: 18px;
+}
+@media (max-width: 760px) {
+  .doc-main {
+    padding: 0 20px 44px;
+  }
+  .doc-hero {
+    padding: 30px 0 6px;
+  }
+  .doc-hero h1 {
+    font-size: 30px;
   }
 }

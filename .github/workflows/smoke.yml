@@ -1,0 +1,102 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # nightly sanity check that the upstream data still matches our parsers
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic:
+    name: Deterministic suites (no network)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate the tied / bases-loaded / bottom-9+ rules
+        run: node tools/bases-loaded-test.mjs
+
+      - name: Validate the situation monitor and the site-wide strip
+        run: |
+          node tools/bases-loaded-monitor-test.mjs
+          node tools/bases-loaded-strip-test.mjs
+
+      - name: Validate the static site (links, claims, wiring)
+        run: node tools/site-links-test.mjs
+
+      - name: Validate two-sided hit forecast model
+        run: node tools/hit-model-test.mjs
+
+      - name: Validate challenges and replay reviews
+        run: |
+          node tools/review-test.mjs
+          node tools/reviews-feed-test.mjs
+          node tools/replay-feed-render-test.mjs
+          node tools/review-probe-test.mjs
+          node tools/review-status-test.mjs
+          node tools/review-watcher-test.mjs
+
+      - name: Validate scoring-change and page-status helpers
+        run: |
+          node tools/scoring-change-test.mjs
+          node tools/page-status-watcher-test.mjs
+          node tools/official-scoring-test.mjs
+          node tools/api-fields-test.mjs
+          node tools/feed-log-persistence-test.mjs
+          node tools/cross-browser-persistence-test.mjs
+          node tools/api-rate-limit-test.mjs
+          node tools/model-calibration-report.mjs
+
+  published-site:
+    name: Published GitHub Pages site (network)
+    runs-on: ubuntu-latest
+    # Only meaningful once a commit is on main and Pages has rebuilt; a pull
+    # request is not published, so running it there would check the previous
+    # deployment and could hide a regression. It also runs nightly, which is
+    # how a silently-broken Pages deployment gets noticed.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Fetch the published site and check it is the site we built
+        run: node tools/deployed-site-test.mjs
+        env:
+          # Pages can trail a merge by up to a minute; the script retries.
+          SITE_CHECK_ATTEMPTS: '12'
+          SITE_CHECK_DELAY_MS: '10000'
+
+  live-smoke:
+    name: Live MLB StatsAPI smoke test (network)
+    runs-on: ubuntu-latest
+    # The nightly upstream check is the one job that needs the public internet;
+    # a red run here is the earliest signal that the official payload changed.
+    continue-on-error: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run smoke test against live MLB StatsAPI
+        run: node tools/smoke-test.mjs

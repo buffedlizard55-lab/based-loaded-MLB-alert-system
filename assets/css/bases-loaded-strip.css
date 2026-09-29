@@ -131,6 +131,16 @@
   border-color: #7a2b3c;
   background: rgba(224, 49, 49, 0.3);
 }
+/* Delay / suspension while tied and late: the watch is held, not dropped. */
+.ll-strip .ll-row-paused {
+  background: rgba(224, 128, 48, 0.1);
+  border-left: 3px solid #7c6a5c;
+}
+.ll-strip .ll-row-paused .ll-row-badge {
+  color: #f0c69a;
+  border-color: #6a5340;
+  background: rgba(224, 128, 48, 0.18);
+}
 
 /* --------------------------------------------------- state: on watch */
 
