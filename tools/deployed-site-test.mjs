@@ -27,6 +27,19 @@
  *   SITE_CHECK_ALLOW_OFFLINE=1     treat "no network" as a skip (exit 0)
  */
 
+const { readFileSync } = await import("node:fs");
+
+/** Describe where two strings first differ, for a diagnosable CI annotation. */
+function firstDifference(local, remote) {
+  const limit = Math.min(local.length, remote.length);
+  for (let i = 0; i < limit; i += 1)
+    if (local[i] !== remote[i])
+      return `byte ${i}: local ${JSON.stringify(local.slice(i, i + 40))} vs published ${JSON.stringify(remote.slice(i, i + 40))}`;
+  if (local.length !== remote.length)
+    return `length ${local.length} local vs ${remote.length} published`;
+  return "identical";
+}
+
 const DEFAULT_SITE = "https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/";
 
 const siteRoot = (process.env.SITE_URL || DEFAULT_SITE).replace(/\/?$/, "/");
@@ -186,6 +199,39 @@ for (const asset of [
   ok(
     result?.status === 200 && (result.body || "").length > 500,
     `${asset} is served from the published site (${result?.status})`,
+  );
+}
+
+/* ------------------- the published bytes are this repository's bytes ------- */
+
+// The strongest form of "the site is deployed": the file the public receives is
+// the file in this repository, byte for byte. Markup checks can pass on a stale
+// deployment that happens to contain the same ids; this cannot.
+const PUBLISHED_FILES = [
+  "index.html",
+  "bases-loaded.html",
+  "verification.html",
+  "scoreboard.html",
+  "reviews.html",
+  "game.html",
+  "assets/js/bases-loaded.js",
+  "assets/js/bases-loaded-core.js",
+  "assets/js/bases-loaded-strip.js",
+  "assets/css/bases-loaded.css",
+  "assets/css/bases-loaded-strip.css",
+];
+
+for (const file of PUBLISHED_FILES) {
+  if (!indexOk) break;
+  const result = await get(file);
+  const local = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+  const remote = result?.body ?? "";
+  if (remote === local) {
+    passed += 1;
+    continue;
+  }
+  failures.push(
+    `${file} differs from this repository — ${firstDifference(local, remote)}`,
   );
 }
 
