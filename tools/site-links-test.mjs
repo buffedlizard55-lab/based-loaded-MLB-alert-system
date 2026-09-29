@@ -357,4 +357,24 @@ if (readmeCount !== null && readmeCount !== checks)
     `  note: the docs quote ${readmeCount} site checks; this run performs ${checks}.`,
   );
 
+/* --------------- 11. the history export controls stay on both pages ------- */
+
+// The export toolbar is read-only, but it is wired by id: a rename in the
+// markup would silently turn the buttons into dead controls. Assert the ids on
+// both entrypoints and that the controller still reaches for the tested
+// serializers instead of building its own strings.
+for (const page of ["index.html", "bases-loaded.html"]) {
+  const html = read(page);
+  for (const id of ["export-json", "export-csv", "copy-evidence", "export-note"])
+    ok(html.includes(`id="${id}"`), `${page} ships the ${id} control`);
+}
+const monitorSource = read("assets/js/bases-loaded.js");
+for (const id of ["export-json", "export-csv", "copy-evidence"])
+  ok(monitorSource.includes(`$("${id}")`), `the monitor wires the ${id} button`);
+ok(
+  /rules\.historyCSV|rules\.historyJSON/.test(monitorSource) &&
+    /rules\.evidenceLine/.test(monitorSource),
+  "The export uses the tested serializers, not ad-hoc string building",
+);
+
 console.log(`✓ ${checks} static site integrity checks passed`);

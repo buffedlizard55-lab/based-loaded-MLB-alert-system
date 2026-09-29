@@ -46,6 +46,7 @@ Every route to loaded bases counts, because occupancy is read from the official 
 - Schedule discovery runs every 30 s (15 s once a game is late); a game in the 9th or later gets a fresh official snapshot every 5 s on the strip and every 2 s on the monitor.
 - Feed delays, brief situations between polls and network outages can be missed. Nothing is back-filled: history is what this browser observed.
 - Notifications need browser support and permission; sound needs one click per session.
+- The monitor's alert history is exportable (JSON/CSV) and each record carries the official snapshot link it was read from; history itself is per browser, so the exported file is the durable record.
 
 ## Publish it
 

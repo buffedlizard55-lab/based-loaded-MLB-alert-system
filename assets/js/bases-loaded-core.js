@@ -343,6 +343,164 @@ const BasesLoadedRules = (() => {
     ];
   }
 
+  /* ------------------------------------------------------------------------
+   * Alert-history export (pure).
+   *
+   * The monitor records every situation it observes. These functions turn
+   * those records into a file a person can keep, diff or hand to a reviewer,
+   * and into one line they can paste into a message — without touching the
+   * DOM, so the exact bytes are covered by tools/bases-loaded-test.mjs.
+   * --------------------------------------------------------------------- */
+
+  const historyColumns = [
+    "observedAt",
+    "observedAtIso",
+    "gamePk",
+    "away",
+    "home",
+    "awayScore",
+    "homeScore",
+    "inning",
+    "halfInning",
+    "outs",
+    "balls",
+    "strikes",
+    "tension",
+    "tensionLabel",
+    "loadedOnEvent",
+    "runnerFirst",
+    "runnerSecond",
+    "runnerThird",
+    "batter",
+    "pitcher",
+    "onDeck",
+    "officialSource",
+    "gameUrl",
+  ];
+
+  const officialFeed = (gamePk) =>
+    `https://statsapi.mlb.com/api/v1.1/game/${gamePk}/feed/live`;
+  const localGameUrl = (gamePk) => `game.html?gamePk=${gamePk}`;
+  const personName = (value) =>
+    typeof value === "string" ? value : value?.name || value?.fullName || "";
+  const asText = (value) => (value == null ? "" : String(value));
+
+  /**
+   * One flat record per alert. Every value is read from the record the monitor
+   * saved when it observed the situation; the only derived fields are
+   * `halfInning`, which is what this alert *is* (the system only ever alerts in
+   * a bottom half), and the two source links, which are built from the gamePk.
+   * Nothing is inferred about the play itself.
+   */
+  function historyRecord(entry, link = localGameUrl) {
+    const runners = Array.isArray(entry?.runners) ? entry.runners : [];
+    const pk = number(entry?.gamePk);
+    const observedAt = Number.isFinite(entry?.observedAt) ? entry.observedAt : null;
+    return {
+      observedAt,
+      observedAtIso: observedAt === null ? "" : new Date(observedAt).toISOString(),
+      gamePk: pk,
+      away: asText(entry?.away),
+      home: asText(entry?.home),
+      awayScore: number(entry?.awayScore),
+      homeScore: number(entry?.homeScore),
+      inning: number(entry?.inning),
+      halfInning: "bottom",
+      outs: number(entry?.outs),
+      balls: number(entry?.balls),
+      strikes: number(entry?.strikes),
+      tension: number(entry?.tension),
+      tensionLabel: asText(entry?.tensionLabel),
+      loadedOnEvent: asText(entry?.lastEvent),
+      runnerFirst: personName(runners[0]),
+      runnerSecond: personName(runners[1]),
+      runnerThird: personName(runners[2]),
+      batter: personName(entry?.batter),
+      pitcher: personName(entry?.pitcher),
+      onDeck: personName(entry?.onDeck),
+      officialSource: pk === null ? "" : officialFeed(pk),
+      gameUrl: pk === null ? "" : link(pk),
+    };
+  }
+
+  /** CSV cell: numbers bare, strings quoted (RFC 4180), empty for nothing. */
+  function csvCell(value) {
+    if (value === null || value === undefined || value === "") return "";
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+    return `"${String(value).replace(/"/g, '""')}"`;
+  }
+
+  /** RFC 4180 export: CRLF line endings, doubled quotes, one row per alert. */
+  function historyCSV(entries = [], link = localGameUrl) {
+    const rows = [...entries].map((entry) => {
+      const record = historyRecord(entry, link);
+      return historyColumns.map((column) => csvCell(record[column])).join(",");
+    });
+    return `${[historyColumns.join(","), ...rows].join("\r\n")}\r\n`;
+  }
+
+  /** JSON export: the records plus the definition and the sources they mean. */
+  function historyJSON(entries = [], options = {}) {
+    const link = options.link || localGameUrl;
+    const now = Number.isFinite(options.now) ? options.now : Date.now();
+    return `${JSON.stringify(
+      {
+        schema: "loaded-late/alerts@1",
+        generatedAt: new Date(now).toISOString(),
+        alertDefinition:
+          "Tied score with all three bases occupied in the bottom of the 9th inning or later, fewer than three outs — the walk-off condition in Official Baseball Rules 5.08(b).",
+        sources: {
+          official:
+            "https://statsapi.mlb.com/api/v1.1/game/{gamePk}/feed/live (the snapshot each record was read from)",
+          rules:
+            "https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf (Official Baseball Rules, 2023)",
+        },
+        alerts: [...entries].map((entry) => historyRecord(entry, link)),
+      },
+      null,
+      2,
+    )}\n`;
+  }
+
+  /**
+   * One line a person can paste into a message: what was seen, when it was
+   * seen, and the official source that proves it. History itself is per
+   * browser and cannot be shared, so the link points at the official record —
+   * which is the same thing the alert was read from.
+   */
+  function evidenceLine(entry, link = localGameUrl) {
+    const record = historyRecord(entry, link);
+    const scored =
+      record.awayScore !== null && record.homeScore !== null && record.away && record.home;
+    const parts = [
+      record.inning === null ? "" : `BOT ${record.inning}`,
+      scored
+        ? `${record.away} ${record.awayScore}–${record.homeScore} ${record.home}`
+        : [record.away, record.home].filter(Boolean).join(" at "),
+      record.outs === null ? "" : `${record.outs} out${record.outs === 1 ? "" : "s"}`,
+      record.balls === null || record.strikes === null
+        ? ""
+        : `count ${record.balls}-${record.strikes}`,
+      "bases loaded",
+      record.batter && record.pitcher
+        ? `${record.batter} vs ${record.pitcher}`
+        : record.batter,
+      record.tensionLabel ? `tension ${record.tensionLabel}` : "",
+      record.observedAtIso ? `observed ${record.observedAtIso}` : "",
+      record.officialSource ? `official ${record.officialSource}` : "",
+      record.gameUrl ? `game ${record.gameUrl}` : "",
+    ].filter(Boolean);
+    return parts.join(" · ");
+  }
+
+  /** File name for an export, dated in UTC so two machines agree. */
+  function historyFileName(kind = "json", now = Date.now()) {
+    const stamp = new Date(Number.isFinite(now) ? now : Date.now())
+      .toISOString()
+      .slice(0, 10);
+    return `loaded-late-alerts-${stamp}.${kind === "csv" ? "csv" : "json"}`;
+  }
+
   return {
     evaluate,
     observe,
@@ -356,6 +514,12 @@ const BasesLoadedRules = (() => {
     pollCadence,
     recentSharedAlert,
     occupancyLabel,
+    historyColumns,
+    historyRecord,
+    historyCSV,
+    historyJSON,
+    evidenceLine,
+    historyFileName,
   };
 })();
 if (typeof module !== "undefined" && module.exports)
