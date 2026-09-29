@@ -276,11 +276,16 @@
     const live = [...games.values()].filter(
       (game) => game.status?.abstractGameState === "Live",
     ).length;
+    // An empty slate means one of two very different things: the first scan has
+    // not answered yet, or the official schedule really has no games for today
+    // (an off-day). Say which one it is instead of implying a scan is pending.
     node.innerHTML = list.length
       ? list.map(({ game }) => boardRow(game, now)).join("")
       : empty(
-          "No games on the slate yet",
-          "The official schedule scan fills this list every 15 seconds.",
+          discoveryAt ? "No games scheduled on this date" : "No games on the slate yet",
+          discoveryAt
+            ? "The official schedule scan found no games for today. The next slate is picked up automatically."
+            : "The official schedule scan fills this list every 15 seconds.",
           "◇",
         );
     const summary = $("board-summary");

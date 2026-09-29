@@ -141,7 +141,7 @@ function boot({
       async getSchedule() {
         state.scheduleCalls++;
         if (state.scheduleFails) throw Error("Offline");
-        return structuredClone(state.multiple || [state.game]);
+        return structuredClone(state.multiple ?? [state.game]);
       },
       async getAlertSnapshot(pk) {
         state.snapshotCalls++;
@@ -186,6 +186,19 @@ function boot({
     },
   };
 }
+const offDay = boot({ multiple: [] });
+await settle();
+check(
+  offDay.nodes.board.innerHTML.includes("No games scheduled on this date"),
+  true,
+  "A slate with no games says so instead of implying a pending scan",
+);
+check(
+  offDay.nodes["board-summary"].textContent.includes("0 games on radar"),
+  true,
+  "The summary still reports zero games on radar",
+);
+
 const app = boot();
 await settle();
 check(app.state.scheduleCalls, 2, "Fetch current and prior MLB dates");
