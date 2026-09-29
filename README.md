@@ -12,6 +12,8 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 - **Site-wide strip:** the scoreboard, replay feed (`reviews.html`) and game view mount a slim "Loaded Late" watcher, so the same one situation is tracked from whichever page of this copy you are on. The strip reuses the same rules engine, the same alert log and the same notification opt-in as the dashboard; a continuous situation never alerts twice just because you changed pages. The monitor page itself does not load it, so no page ever runs two watchers.
 - **Original pages preserved:** `scoreboard.html`, `game.html`, and `reviews.html`. Their legacy features remain separate from this narrow monitor.
 
+**New here?** [docs/loaded-late-quickstart.md](docs/loaded-late-quickstart.md) is the short version: which page to open, how to arm sound and notifications, what triggers an alert, and what the limits are.
+
 ## Run / preview
 
 No build or dependencies are required:
