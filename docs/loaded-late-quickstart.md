@@ -49,9 +49,9 @@ Every route to loaded bases counts, because occupancy is read from the official 
 
 ## Publish it
 
-[`.github/workflows/pages.yml`](../.github/workflows/pages.yml) publishes this repository root to Pages on every push to `main` (it asks Pages to enable itself the first time it runs). If that setting is still off, the one-time fallback is: **Settings → Pages → Source: Deploy from a branch → `main` / `/ (root)`**, then save. The site lands at `https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/`. No build step, no server required.
+GitHub Pages publishes this repository root with its built-in *Deploy from a branch* build — branch `main`, folder `/ (root)` — so every merge to `main` republishes the site in about a minute. There is deliberately no deployment workflow: the built-in build already publishes the root, and a second publisher would race it. If that setting is ever switched off, the one-time fallback is **Settings → Pages → Source: Deploy from a branch → `main` / `/ (root)`**. The site lands at https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/. No build step, no server required.
 
-Status on 2026-09-29: the published URL still answered HTTP 404 (*There isn't a GitHub Pages site here*) and the automation token was refused (HTTP 403) when trying to enable Pages directly — treat the URL as **unverified** until the workflow run on `main` and the live page have been checked (see the session log in the README).
+Status on 2026-09-29: the deployment is **live and verified** — the Pages API reports `status: "built"` with `source: main /`, the built-in `pages-build-deployment` run for `main` succeeded, and [`tools/deployed-site-test.mjs`](../tools/deployed-site-test.mjs) fetches the published pages in CI after every merge and nightly. Run it yourself with `node tools/deployed-site-test.mjs`.
 
 Prefer to run it locally instead:
 

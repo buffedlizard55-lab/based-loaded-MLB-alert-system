@@ -104,21 +104,45 @@ See [the detection rules, coverage and limitations](docs/bases-loaded-alerts.md)
 ## Test the alert system
 
 ```bash
-node tools/bases-loaded-test.mjs        # rules engine
+node tools/bases-loaded-test.mjs         # rules engine
 node tools/bases-loaded-monitor-test.mjs # monitor page controller
 node tools/bases-loaded-strip-test.mjs   # site-wide strip + page wiring
 node tools/site-links-test.mjs           # pages, links, citations, CI wiring
+node tools/deployed-site-test.mjs        # the published site itself (network)
 ```
 
 These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. Demo data never enters live history. The site suite checks that every page and every internal
 link target exists, that no page uses a root-absolute path (the copy has to work under a
 project Pages subpath), that outbound links are HTTPS and no third-party scripts are loaded,
-that the monitor and the sources page still accept no manual input, and that the project
-prompt and the verbatim Rule 5.08(b) sentence are still present in this README.
+that the monitor and the sources page still accept no manual input, that the project
+prompt and the verbatim Rule 5.08(b) sentence are still present in this README, that the
+documented alert projection still matches `api.js`, and that the repository ships no
+competing Pages deployment. The last suite, `tools/deployed-site-test.mjs`, is the only
+network test of the four plus one: it fetches the published URL, its pages and its alert
+assets and fails if the deployed site drifts from this repository. CI runs it after every
+merge to `main` and nightly, never on a pull request.
 
 ## Deploy this copy
 
-Serve this repository root on a static host — there is no build step and no server requirement. This checkout does **not** change the original `MLB-Live-PBP` deployment; publishing this copy requires turning Pages on for this repository once (Settings → Pages → *Deploy from a branch* → `main` / `/ (root)`), after which every push to `main` republishes the site at `https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/`. Two workflows now ship in [`.github/workflows/`](.github/workflows/): `pages.yml` publishes this repository root to Pages on every push to `main` (it asks Pages to enable itself on the first run), and `smoke.yml` runs every deterministic suite on each push and pull request plus a nightly live-API check against `statsapi.mlb.com`. If the Pages setting is still off and the workflow cannot turn it on, the one-time fallback is **Settings → Pages → Deploy from a branch → `main` / `/ (root)`**. API usage remains subject to MLB's terms; this is an unofficial, personal-use project.
+The repository root **is** the site — no build step, no server requirement — and it is
+published: **[buffedlizard55-lab.github.io/based-loaded-MLB-alert-system](https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/)**.
+GitHub Pages serves it with the built-in *Deploy from a branch* build (branch `main`,
+folder `/ (root)`), so every merge to `main` republishes it in about a minute.
+
+There is deliberately **no** Actions deployment workflow. GitHub's built-in build already
+publishes the root and a second publisher would race it; the presence of a Pages
+workflow is now a test failure. Verified 2026-09-29: the Pages API reports
+`status: "built"` with `source: main /`, the built-in `pages-build-deployment` run for
+`main` succeeded, and the published pages were fetched and compared against this
+repository. If the setting is ever switched off, the one-time fallback is
+**Settings → Pages → Deploy from a branch → `main` / `/ (root)`**.
+
+[`.github/workflows/smoke.yml`](.github/workflows/smoke.yml) runs every deterministic
+suite on each push and pull request, checks the published site after every merge to
+`main` and nightly ([`tools/deployed-site-test.mjs`](tools/deployed-site-test.mjs)), and
+runs a nightly live-API check against `statsapi.mlb.com`. This copy does **not** change
+the original `MLB-Live-PBP` deployment; this repository has its own Pages site. API
+usage remains subject to MLB's terms; this is an unofficial, personal-use project.
 
 ## Sources for manual review
 
@@ -160,7 +184,8 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 5. **Live end-to-end proof still pending.** Deterministic suites cover 11,727 rule states
-   plus 74 monitor, 160 strip and 253 site checks (counts as of 2026-09-29), but a live qualifying game has not yet
+   plus 74 monitor, 160 strip and 258 site checks, and a published-site check verifies the
+   deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment — the next live tied bottom-9+ game is
    the real acceptance test.
 6. **Development-sandbox network limit (flagged, open).** The sandbox used for the
@@ -176,14 +201,12 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 
 **Suggested work, in priority order (next session / the session after)**
 
-1. **Confirm the published site.** `.github/workflows/pages.yml` now deploys this
-   repository root to Pages on every push to `main` and asks Pages to enable itself on
-   the first run. Flagged irregularity to check: on 2026-09-29 the published URL still
-   returned HTTP 404 (*There isn't a GitHub Pages site here*) and the automation token
-   was refused with HTTP 403 (*Resource not accessible by integration*) when trying to
-   enable Pages directly, so the one-time **Settings → Pages → Deploy from a branch →
-   `main` / `/ (root)`** click may still be needed. Verify the workflow run on `main` and
-   the live URL before assuming it is up.
+1. **Confirm the published site after the next merge (in progress).** The site is live
+   and the deployment is verified; the remaining check is that the *content* published
+   from `main` after the next merge matches this repository, which
+   `tools/deployed-site-test.mjs` now asserts in CI on every merge to `main` and nightly.
+   Watch the first `published-site` run on `main` and read its log — a red run there is
+   the only signal that the public copy drifted.
 2. **Live-fire verification:** on the next tied game entering bot 9+, keep the monitor
    visible and record watch → load → chime → notification with the game link as proof.
    The new live slate makes this easy to document (the row shows the exact snapshot age).
@@ -215,7 +238,7 @@ line, so what was checked, what was corrected and what is still open is written 
 - Added [`verification.html`](verification.html) — requirement-by-requirement mapping,
   every route to loaded bases with its rule number, the official data sources, the
   polling budget, the limitations and this log.
-- Added `tools/site-links-test.mjs` (253 checks: pages, links, structure, citations,
+- Added `tools/site-links-test.mjs` (255 checks: pages, links, structure, citations,
   no-manual-input, CI wiring) and moved both workflows into
   `.github/workflows/` so CI runs the suites on every push.
 
@@ -246,6 +269,27 @@ line, so what was checked, what was corrected and what is still open is written 
 - **Flagged irregularities (open):** the development sandbox cannot reach the MLB API
   (limitation 6 above), and the published Pages URL is still 404 with the automation
   token refused for the Pages endpoint (suggested work 1 above).
+
+**Session 2 — deployment verified end to end, redundant publisher retired (2026-09-29)**
+
+- **Irregularity found and fixed (deployment):** the first session added
+  `.github/workflows/pages.yml` (Actions deployment with `enablement: true`) while this
+  repository *already* published the `main` root through GitHub's built-in Pages build.
+  Two publishers for one site race each other, and the Actions route could never have
+  enabled Pages by itself — the automation token is refused by the Pages API. The
+  workflow was removed and the test suite now fails if one is re-added.
+- **Deployment verified (not assumed):** `GET /repos/…/pages` reports
+  `status: "built"` with `source: main /`; the built-in `pages-build-deployment` run for
+  `main` completed successfully; and the published pages were fetched and compared with
+  this repository. The live site is https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/
+- **New guard:** `tools/deployed-site-test.mjs` fetches the published root,
+  `bases-loaded.html`, `verification.html`, `scoreboard.html`, `reviews.html`,
+  `game.html` and the alert assets, and asserts the published wording is this
+  repository's wording (including the verbatim Rule 5.08(b) sentence). CI runs it after
+  every merge to `main` and nightly; the deterministic CI job is asserted to stay
+  offline.
+- Deterministic suites after the change: rules 11,727 · monitor 74 · strip 160 · site
+  255.
 
 ## Original MLB Live PBP documentation
 
@@ -521,7 +565,7 @@ for archived games the request is scoped to the feed's game season.
 │       └── …
 ├── tools/                     # deterministic test suites (no packages, no network)
 ├── docs/                      # detection contract, verification reports, quickstart
-├── .github/workflows/         # pages.yml (publish) + smoke.yml (checks in CI)
+├── .github/workflows/         # smoke.yml — checks in CI (Pages publishes from main)
 └── server.mjs                 # optional local static + replay-log server
 ```
 
@@ -599,22 +643,25 @@ with no build step and no workflow permissions:
 2. In the repo: **Settings → Pages → Source → "Deploy from a branch"** → branch
    `main` → folder `/ (root)` → **Save**.
 3. Your site is live at **`https://<your-username>.github.io/<repo-name>/`** —
-   e.g. `https://buffedlizard55-lab.github.io/MLB-Live-PBP/`. Every push to `main`
-   republishes it automatically (takes ~1 minute).
+   e.g. [`MLB-Live-PBP`](https://buffedlizard55-lab.github.io/MLB-Live-PBP/) or, for this
+   copy, **[https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system](https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/)**. Every push to
+   `main` republishes it automatically (takes ~1 minute).
 
-### Optional: Actions-based deployment & CI smoke test
+### Continuous checks (no deployment workflow needed)
 
-The repository already ships both workflows in [`.github/workflows/`](.github/workflows/)
-in this copy, so there is nothing to copy:
+Publishing needs no workflow at all in this copy — GitHub's built-in *Deploy from a
+branch* build publishes the repository root of `main`. What does ship in
+[`.github/workflows/`](.github/workflows/) is `smoke.yml`:
 
-- `pages.yml` — publishes the repository root to Pages on every push to `main`
-  (**Settings → Pages → Source → "GitHub Actions"**, or let the workflow's
-  `enablement` step turn Pages on the first time it runs).
-- `smoke.yml` — runs every deterministic suite (rules, monitor, strip, site
-  integrity, replay review, scoring changes) on each push and pull request, plus a
-  nightly live check that the upstream MLB StatsAPI still matches our parsers.
+- every deterministic suite (rules, monitor, strip, site integrity, replay review,
+  scoring changes, model calibration) on each push and pull request;
+- `tools/deployed-site-test.mjs` after each merge to `main` and on the nightly schedule
+  — it fetches **https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/** and fails if the published pages or their alert wording
+  differ from this repository;
+- a nightly live check that the upstream MLB StatsAPI still matches our parsers.
 
-The branch-deployment route below still works and needs no workflow permissions at all.
+This repository has no `pages.yml`: the built-in build already publishes the root, and a
+second publisher would race it (`tools/site-links-test.mjs` fails if one is added back).
 
 ### Customizing
 

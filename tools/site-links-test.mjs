@@ -239,18 +239,18 @@ for (const page of pages) {
 
 /* ------------------------------------------- 8. deployment entry points */
 
-ok(
-  exists(".github/workflows/pages.yml"),
-  "A Pages workflow ships in .github/workflows (Actions deployment path)",
-);
+// The site is published by GitHub Pages' built-in "deploy from a branch"
+// build: the repository root of `main` IS the site. That is deliberate — no
+// build step, nothing to keep in sync, and one publisher only. A competing
+// Actions deployment workflow would race the built-in build, so assert the
+// repository does not ship one.
 ok(
   exists(".github/workflows/smoke.yml"),
-  "A smoke workflow ships in .github/workflows (deterministic suites in CI)",
+  "The checks workflow ships in .github/workflows",
 );
-const pagesWorkflow = read(".github/workflows/pages.yml");
 ok(
-  /allow_unsafe|actions\/upload-pages-artifact/.test(pagesWorkflow),
-  "The Pages workflow uploads the repository root as the site",
+  !exists(".github/workflows/pages.yml"),
+  "No competing Pages workflow (the built-in branch build publishes the root)",
 );
 const smokeWorkflow = read(".github/workflows/smoke.yml");
 for (const suite of [
@@ -260,7 +260,26 @@ for (const suite of [
   "tools/site-links-test.mjs",
 ])
   ok(smokeWorkflow.includes(suite), `CI runs ${suite}`);
+ok(
+  smokeWorkflow.includes("tools/deployed-site-test.mjs"),
+  "CI checks the published site after a merge to main and nightly",
+);
+ok(
+  /github\.ref == 'refs\/heads\/main'/.test(smokeWorkflow),
+  "The published-site check is scoped to main (never runs against an unpublished PR)",
+);
 
+// The published-site check is a network test; the deterministic group must
+// never depend on it, or a sandbox without internet becomes a red build.
+const deterministicJob = smokeWorkflow.slice(
+  smokeWorkflow.indexOf("deterministic:"),
+  smokeWorkflow.indexOf("published-site:"),
+);
+ok(
+  !deterministicJob.includes("deployed-site-test.mjs") &&
+    !deterministicJob.includes("smoke-test.mjs"),
+  "The deterministic CI job stays offline",
+);
 
 /* ------------------- 9. the documented projection matches the code --------- */
 
@@ -295,6 +314,7 @@ for (const [file, label] of [
   );
 }
 
+
 /* ------------------------------------------------------------- assets */
 
 for (const asset of [
@@ -307,5 +327,34 @@ for (const asset of [
   "server.mjs",
 ])
   ok(exists(asset) && statSync(path.join(root, asset)).size > 0, `${asset} is present`);
+
+/* --------------------- 10. documented suite counts stay in step ----------- */
+
+// The README and the sources page both quote the size of this suite. The two
+// figures may lag the real number slightly (the suite grows whenever a page
+// grows), but they may never disagree with each other — that is how a reader
+// ends up comparing two "official" numbers that cannot both be right.
+function documentedSiteCount(file, pattern) {
+  const match = read(file).match(pattern);
+  return match ? Number(match[1].replace(/,/g, "")) : null;
+}
+const readmeCount = documentedSiteCount("README.md", /([\d,]+) site checks/);
+const pageCount = documentedSiteCount(
+  "verification.html",
+  /static site by ([\d,]+) checks/,
+);
+ok(
+  readmeCount !== null && pageCount !== null,
+  "Both the README and the sources page state the size of this suite",
+);
+check(
+  pageCount,
+  readmeCount,
+  "The README and the sources page quote the same suite size",
+);
+if (readmeCount !== null && readmeCount !== checks)
+  console.log(
+    `  note: the docs quote ${readmeCount} site checks; this run performs ${checks}.`,
+  );
 
 console.log(`✓ ${checks} static site integrity checks passed`);

@@ -283,9 +283,12 @@
                   Static site served from the repository root; no build step
                 </td>
                 <td>
-                  <code>node server.mjs</code> locally, or
-                  <code>.github/workflows/pages.yml</code> for the published
-                  copy — status of the live URL is tracked in §6
+                  <code>node server.mjs</code> locally, or the published copy
+                  at
+                  <a href="https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/"
+                    >buffedlizard55-lab.github.io/based-loaded-MLB-alert-system</a
+                  >
+                  — verified in §6
                 </td>
               </tr>
               <tr>
@@ -644,10 +647,12 @@
           <li>
             <strong>Live end-to-end proof is still pending.</strong> The rule
             engine is covered by 11,727 deterministic checks, the monitor by 74,
-            the strip by 160 and the static site by 253 (counts as of
-            2026-09-29), but the honest next
-            acceptance test is a real tied game entering the bottom of the 9th
-            with the bases loaded, observed end to end.
+            the strip by 160 and the static site by 258 checks (counts as of
+            2026-09-29), and the published copy of this site is verified by
+            <code>tools/deployed-site-test.mjs</code> on every merge and
+            nightly, but the honest next acceptance test is a real tied game
+            entering the bottom of the 9th with the bases loaded, observed end
+            to end.
           </li>
           <li>
             <strong>Development-sandbox network limit (flagged, open).</strong>
@@ -690,12 +695,14 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              253 checks: every internal link target on every page exists, no
+              258 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still
               present, the documented alert projection still matches
-              <code>api.js</code>, and CI runs every suite.
+              <code>api.js</code>, and CI runs every suite — while shipping no
+              competing Pages workflow and keeping the deterministic CI job
+              offline.
             </li>
             <li>
               <span class="doc-badge warn">Corrected</span>
@@ -705,14 +712,28 @@
               verbatim sentence quoted in §1, with the source next to it.
             </li>
             <li>
-              <span class="doc-badge open">Open</span>
-              Irregularity flagged: this repository's published GitHub Pages URL
-              returned HTTP 404 (“There isn't a GitHub Pages site here”) when
-              checked on 2026-09-29, and the automation token was refused
-              (HTTP 403, “Resource not accessible by integration”) when trying
-              to enable Pages. Enabling the site is a one-time repository
-              setting: Settings → Pages → Deploy from a branch → <code>main</code>
-              / <code>/ (root)</code>.
+              <span class="doc-badge warn">Corrected</span>
+              Irregularity found and fixed: this repository already published
+              the <code>main</code> root with GitHub's built-in Pages build,
+              while the first session had added an Actions deployment workflow
+              (<code>.github/workflows/pages.yml</code>) — two publishers for
+              one site. The workflow was removed, and the test suite now fails
+              if one is added back.
+            </li>
+            <li>
+              <span class="doc-badge ok">Verified</span>
+              Deployment checked rather than assumed on 2026-09-29: the Pages
+              API reports <code>status: "built"</code> with
+              <code>source: main /</code>, the built-in
+              <code>pages-build-deployment</code> run for <code>main</code>
+              completed successfully, and the published pages were fetched and
+              compared with this repository by
+              <code>tools/deployed-site-test.mjs</code> — a network check that
+              CI runs after every merge to <code>main</code> and nightly. The
+              site lives at
+              <a href="https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/"
+                >buffedlizard55-lab.github.io/based-loaded-MLB-alert-system</a
+              >.
             </li>
           </ul>
         </div>
