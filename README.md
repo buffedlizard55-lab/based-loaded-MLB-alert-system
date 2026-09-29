@@ -120,7 +120,9 @@ documented alert projection still matches `api.js`, and that the repository ship
 competing Pages deployment. The last suite, `tools/deployed-site-test.mjs`, is the only
 network test of the four plus one: it fetches the published URL, its pages and its alert
 assets and fails if the deployed site drifts from this repository. CI runs it after every
-merge to `main` and nightly, never on a pull request. It can be dry-run against any
+merge to `main` and nightly, never on a pull request. It retries the whole assessment
+(30 rounds × 15 s in CI) because Pages builds *after* the merge commit, so for a minute or
+two the published site is legitimately the previous commit. It can be dry-run against any
 server, which is how its own assertions are tested:
 
 ```bash
@@ -339,13 +341,24 @@ line, so what was checked, what was corrected and what is still open is written 
   says so instead of claiming success.
   Documented limitation, deliberately not papered over: history is per browser, so a
   shareable link points at the **official** record, not at a private local list.
+- **First real failure of the byte-equality check, and the fix.** The check's first run on
+  `main` correctly refused to certify the deployment — and named exactly why in the
+  annotations (`assets/js/bases-loaded.js differs — byte 11286: local "/* ----…" vs
+  published "function feedback(message) {…"`). The cause was timing, not content: the
+  `pages-build-deployment` run for that merge finished about a minute after the check
+  started, so the check was reading the *previous* commit. Its per-request retry could not
+  cover that. The whole assessment is now retried (30 rounds × 15 s in CI) until the
+  published bytes match, files already confirmed identical are not re-fetched, the log says
+  how long it waited, and a persisting mismatch points at the Pages build to inspect.
+  Proven against a deliberately stale server: the check retried three rounds and passed as
+  soon as the "deployment" caught up.
 - **Deployment check upgraded to byte equality.** The published-site check asserted ids
   and sentences, which a stale-but-similar deployment could still satisfy. It now also
   fetches every published page and alert asset and requires it to be **byte-identical**
   to the file in this repository (29 checks against a local dry run), reporting the first
   differing byte when it is not.
 - Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · site
-  270.
+  270 · published-site 30 (local dry run against `node server.mjs`).
 
 ## Original MLB Live PBP documentation
 
