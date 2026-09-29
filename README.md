@@ -288,8 +288,17 @@ line, so what was checked, what was corrected and what is still open is written 
   repository's wording (including the verbatim Rule 5.08(b) sentence). CI runs it after
   every merge to `main` and nightly; the deterministic CI job is asserted to stay
   offline.
+- **Nightly check made date-honest.** The live smoke test derived its date from UTC, so
+  the 04:17 UTC run landed on the *next* MLB day, where no game has started yet: the
+  started-game shapes (linescore inning state, boxscore team stats, review counters) had
+  nothing to assert against and the job failed for the wrong reason. It now resolves the
+  date in **America/New_York** (MLB's own day boundary) and walks back up to a week to the
+  most recent slate that actually has a Live or Final game; started-game shapes are
+  asserted there and reported as skipped for a slate that has not begun. Failures now
+  also emit `::error` annotations, so a red job states which checks failed instead of
+  only "exit code 1".
 - Deterministic suites after the change: rules 11,727 · monitor 74 · strip 160 · site
-  255.
+  258.
 
 ## Original MLB Live PBP documentation
 

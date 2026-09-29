@@ -6,20 +6,111 @@
  * renderers depend on. Fails (exit 1) if anything is missing, so a broken
  * upstream API change fails CI instead of silently breaking the site.
  *
+ * Which date it checks
+ *   The preset date is *today in America/New_York* — MLB's own day boundary,
+ *   not UTC's. If that slate has no game that has actually started (which is
+ *   the normal state at the nightly 04:17 UTC run: the previous day's games
+ *   are over and the next day's have not begun), the script walks back up to
+ *   a week to the most recent slate with a Live or Final game, so the
+ *   structure checks always run against a game that has real data. A date
+ *   passed on the command line is always used exactly as given.
+ *
+ * Structure checks that only a started game can satisfy (linescore.inningState,
+ * boxscore.teamStats, gameData.review / absChallenges) are asserted for Live
+ * and Final games and reported as skipped for a slate that has not started.
+ *
  * Run:  node tools/smoke-test.mjs [YYYY-MM-DD]
  * ==========================================================================*/
 
 const V1 = 'https://statsapi.mlb.com/api/v1';
 const V11 = 'https://statsapi.mlb.com/api/v1.1';
 
-const date = process.argv[2] || new Date().toISOString().slice(0, 10);
+const ARG_DATE = process.argv[2] || null;
+
+/** Today's date (or `offset` days back) in America/New_York, as YYYY-MM-DD. */
+function baseballDate(offset = 0) {
+  const at = new Date(Date.now() + offset * 86_400_000);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(at);
+}
+
+async function scheduleGames(day, hydrate = '') {
+  const url = `${V1}/schedule?sportId=1&date=${day}${hydrate ? `&hydrate=${hydrate}` : ''}`;
+  const sched = await getJSON(url);
+  return sched.dates && sched.dates[0] ? sched.dates[0].games : [];
+}
+
+const startedStates = new Set(['Live', 'Final']);
+function hasStarted(games) {
+  return (games || []).some((g) => g.status && startedStates.has(g.status.abstractGameState));
+}
+
+/**
+ * Resolve the slate to check. Today-in-ET first; then walk back a week for the
+ * most recent slate that actually has a Live or Final game. The first slate
+ * with any games at all is remembered as a fallback so an off-season run still
+ * has team objects to validate instead of failing on an empty list.
+ */
+let date = ARG_DATE || baseballDate(0);
+let games = [];
+let fallback = null;
+try {
+  games = await scheduleGames(date, 'probablePitcher,linescore,decisions');
+  if (!fallback && games.length) fallback = { date, games };
+  if (!ARG_DATE && !hasStarted(games)) {
+    for (let back = 1; back <= 7; back += 1) {
+      const day = baseballDate(-back);
+      const prior = await scheduleGames(day, 'probablePitcher,linescore,decisions');
+      if (prior.length && !fallback) fallback = { date: day, games: prior };
+      if (hasStarted(prior)) {
+        date = day;
+        games = prior;
+        console.log(`(no game had started on ${ARG_DATE || baseballDate(0)}; using ${day})`);
+        break;
+      }
+    }
+  }
+  if (!games.length && fallback) {
+    date = fallback.date;
+    games = fallback.games;
+    console.log(`(no games in the last week on the primary slate; using ${date})`);
+  }
+} catch (err) {
+  console.log(`(could not resolve the slate: ${err.message})`);
+}
 
 let failures = 0;
+const failureLabels = [];
 
 function check(label, ok, extra) {
   const mark = ok ? 'PASS' : 'FAIL';
   console.log(`[${mark}] ${label}${ok || !extra ? '' : ` — ${extra}`}`);
-  if (!ok) failures += 1;
+  if (!ok) {
+    failures += 1;
+    failureLabels.push(extra ? `${label} — ${extra}` : label);
+  }
+}
+
+/**
+ * A shape only a started game can have. Asserted for Live/Final games;
+ * reported (not failed) for a slate that has not begun, so the nightly run at
+ * 04:17 UTC cannot go red merely because it is between MLB days.
+ */
+let structuresAsserted = null;
+function checkGameShape(label, ok, extra) {
+  if (structuresAsserted === null) {
+    structuresAsserted =
+      !!games.find((g) => g.status && startedStates.has(g.status.abstractGameState)) || null;
+  }
+  if (!structuresAsserted) {
+    console.log(`  (slate has not started — skipped: ${label})`);
+    return;
+  }
+  check(label, ok, extra);
 }
 
 async function getJSON(url) {
@@ -31,13 +122,11 @@ async function getJSON(url) {
 /* ---------------------------------------------------------------- schedule */
 
 console.log(`\n== schedule for ${date} ==`);
-let games = [];
 try {
   const sched = await getJSON(
     `${V1}/schedule?sportId=1&date=${date}&hydrate=probablePitcher,linescore,decisions`);
   check('schedule fetched', !!sched, 'no data object');
   check('schedule has dates array', Array.isArray(sched.dates));
-  games = sched.dates && sched.dates[0] ? sched.dates[0].games : [];
   check('schedule returns games', Array.isArray(games), `${games.length} games`);
   if (games.length) {
     const g = games[0];
@@ -62,6 +151,11 @@ try {
   } else {
     // prefer a live game, else the first game
     feedPk = (list.find((g) => g.status.abstractGameState === 'Live') || list[0]).gamePk;
+
+    const feedState =
+      (games.find((g) => g.gamePk === feedPk) || {}).status?.abstractGameState || '';
+    const feedStarted = startedStates.has(feedState);
+    console.log(`  (feed game ${feedPk} is ${feedState || 'unknown'}${feedStarted ? '' : ' — pre-game, started-game shapes reported as skipped'})`);
 
     let feed;
     try {
@@ -109,7 +203,8 @@ try {
     if (ls) {
       check('linescore has teams totals', !!(ls.teams && ls.teams.away && ls.teams.home));
       check('linescore has innings array', Array.isArray(ls.innings), `${ls.innings.length} innings`);
-      check('linescore has inningState', typeof ls.inningState === 'string');
+      if (feedStarted) check('linescore has inningState', typeof ls.inningState === 'string');
+      else console.log(`  (pre-game — skipped: linescore has inningState)`);
     }
 
     const box = feed.liveData && feed.liveData.boxscore;
@@ -120,8 +215,10 @@ try {
         check(`boxscore ${side} has players`, !!(t && t.players));
         check(`boxscore ${side} has battingOrder`, Array.isArray(t && t.battingOrder),
           `${t && t.battingOrder ? t.battingOrder.length : 0} hitters`);
-        check(`boxscore ${side} has teamStats`, !!(t && t.teamStats &&
-          t.teamStats.batting && t.teamStats.pitching));
+        if (feedStarted)
+          check(`boxscore ${side} has teamStats`, !!(t && t.teamStats &&
+            t.teamStats.batting && t.teamStats.pitching));
+        else console.log(`  (pre-game — skipped: boxscore ${side} has teamStats)`);
       }
     }
 
@@ -133,8 +230,10 @@ try {
         !!r.away && typeof r.away.used === 'number' && typeof r.away.remaining === 'number' &&
         !!r.home && typeof r.home.used === 'number' && typeof r.home.remaining === 'number',
         JSON.stringify(r));
-    } else {
+    } else if (feedStarted) {
       check('gameData.review present', false, 'missing gameData.review');
+    } else {
+      console.log('  (pre-game — skipped: gameData.review)');
     }
     const abs = gd2.absChallenges;
     if (abs) {
@@ -144,8 +243,10 @@ try {
         !!abs.home && typeof abs.home.usedSuccessful === 'number' &&
         typeof abs.home.usedFailed === 'number' && typeof abs.home.remaining === 'number',
         JSON.stringify(abs));
-    } else {
+    } else if (feedStarted) {
       check('gameData.absChallenges present', false, 'missing gameData.absChallenges');
+    } else {
+      console.log('  (pre-game — skipped: gameData.absChallenges)');
     }
 
     // Scan every play for review markers; a feed from an active/recent date
@@ -192,9 +293,15 @@ console.log('\n== schedule hydrate=review ==');
 try {
   const sched = await getJSON(`${V1}/schedule?sportId=1&date=${date}&hydrate=review`);
   const list = sched.dates && sched.dates[0] ? sched.dates[0].games : [];
-  const bad = list.filter((g) => !g.review || !g.review.away || typeof g.review.away.used !== 'number');
-  check('every game carries review.away/home.used/remaining', bad.length === 0,
-    `${bad.length} games missing review hydration`);
+  // Only games that have started must carry the counters; a pre-game slate has
+  // nothing to count yet and MLB omits the hydration for those games.
+  const started = list.filter((g) => g.status && startedStates.has(g.status.abstractGameState));
+  const bad = started.filter((g) => !g.review || !g.review.away || typeof g.review.away.used !== 'number');
+  if (started.length)
+    check('every started game carries review.away/home.used/remaining', bad.length === 0,
+      `${bad.length} of ${started.length} started games missing review hydration`);
+  else
+    console.log('  (no started games on this slate — skipped: review hydration)');
 } catch (err) {
   check('schedule hydrate=review fetched', false, err.message);
 }
@@ -249,9 +356,11 @@ try {
     g.teams && g.teams.away && g.teams.away.team,
     g.teams && g.teams.home && g.teams.home.team,
   ]).filter(Boolean);
-  check('schedule teams carry official full names',
-    schedTeams.length > 0 && schedTeams.every((t) => typeof t.name === 'string' && t.name.length > 0),
-    `${schedTeams.length} team objects`);
+  if (schedTeams.length)
+    check('schedule teams carry official full names',
+      schedTeams.every((t) => typeof t.name === 'string' && t.name.length > 0),
+      `${schedTeams.length} team objects`);
+  else console.log('  (no games on this slate — skipped: schedule team names)');
   check('every schedule team id resolves in the teams directory',
     schedTeams.every((t) => ids.has(t.id)));
   const abbrevOnSched = schedTeams.filter((t) => 'abbreviation' in t).length;
@@ -387,4 +496,12 @@ try {
 }
 
 console.log(failures ? `\n${failures} check(s) FAILED\n` : '\nall checks passed\n');
+
+// A red job should say why in the checks UI (and in the check-run API) instead
+// of only "Process completed with exit code 1".
+if (failures) {
+  const summary = `${failures} live-API check(s) failed for ${date}`;
+  console.log(`::error title=MLB StatsAPI smoke test::${summary}`);
+  console.log(`::warning title=Failing checks::${failureLabels.slice(0, 10).join(' | ')}`);
+}
 process.exit(failures ? 1 : 0);
