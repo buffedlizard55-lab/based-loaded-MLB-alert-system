@@ -42,7 +42,12 @@ Every route to loaded bases counts, because occupancy is read from the official 
 
 ## Practical limits
 
-- Keep one page open and visible. Hidden tabs pause and closing the page stops watching — this is a browser app, not a server-side push/SMS service.
+- Keep one page open and visible, **or** run the always-on watcher if you want the alert with every tab closed:
+  ```bash
+  node tools/watcher.mjs                                   # same rules engine, no browser
+  WATCHER_NTFY_TOPIC=my-loaded-late node tools/watcher.mjs  # push to a phone via ntfy
+  ```
+  It logs every alert (with the official snapshot link) to `data/watcher-alerts.jsonl` and de-duplicates across restarts. You supply the machine it runs on; the repository hosts nothing.
 - Schedule discovery runs every 30 s (15 s once a game is late); a game in the 9th or later gets a fresh official snapshot every 5 s on the strip and every 2 s on the monitor.
 - Feed delays, brief situations between polls and network outages can be missed. Nothing is back-filled: history is what this browser observed.
 - Notifications need browser support and permission; sound needs one click per session.

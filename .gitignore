@@ -6,3 +6,7 @@ Thumbs.db
 node_modules/
 .vscode/
 .idea/
+
+# Always-on watcher runtime state (local to each deployment, never shared)
+data/watcher-state.json
+data/watcher-alerts.jsonl

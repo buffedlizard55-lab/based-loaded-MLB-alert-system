@@ -33,6 +33,9 @@ jobs:
           node tools/bases-loaded-monitor-test.mjs
           node tools/bases-loaded-strip-test.mjs
 
+      - name: Validate the always-on watcher (same rules, no browser)
+        run: node tools/watcher-test.mjs
+
       - name: Validate the static site (links, claims, wiring)
         run: node tools/site-links-test.mjs
 

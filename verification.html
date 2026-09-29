@@ -623,10 +623,17 @@
         </p>
         <ul class="doc-list">
           <li>
-            <strong>Browser-bound monitoring.</strong> Alerts exist only while a
-            page of this site is open and visible. Hidden tabs pause; closing
-            the browser stops it. There is no server-side watcher, push, SMS or
-            email. This is the single biggest gap for daily use.
+            <strong>Browser-bound by default.</strong> The page alerts only while
+            it is open and visible, which is the single biggest gap for daily
+            use — but it is no longer the only way to watch.
+            <code>tools/watcher.mjs</code> runs the <em>same</em> rules engine
+            (<code>assets/js/bases-loaded-core.js</code>, required verbatim)
+            outside the browser: same discovery cadence, same target rule, same
+            situation logic, a JSONL log where every record carries its official
+            snapshot URL, and optional phone push through a webhook or ntfy. What
+            it still needs is somewhere to run — an always-on machine or
+            scheduler you provide; nothing is hosted for you and browser-grade
+            Web Push (VAPID) is still not implemented.
           </li>
           <li>
             <strong>Polling gaps.</strong> A situation that appears and resolves
@@ -646,8 +653,9 @@
           </li>
           <li>
             <strong>Live end-to-end proof is still pending.</strong> The rule
-            engine is covered by 11,765 deterministic checks, the monitor by 99,
-            the strip by 160 and the static site by 270 checks (counts as of
+            engine is covered by 11,765 deterministic checks, the monitor by 99, the watcher by 85,
+            the strip by 160, the always-on watcher by 85 and the static site by
+            276 checks (counts as of
             2026-09-29), and the published copy of this site is verified by
             <code>tools/deployed-site-test.mjs</code> on every merge and
             nightly, but the honest next acceptance test is a real tied game
@@ -681,6 +689,13 @@
             </li>
             <li>
               <span class="doc-badge ok">Passed</span>
+              Always-on watcher: <code>node tools/watcher-test.mjs</code> — 85
+              checks with a stubbed network and clock: what must and must not
+              alert, de-duplication and re-arming, a delayed game, a failed
+              schedule or snapshot, overnight carryovers, bounded concurrency,
+              the log record, and every push channel including its failures.
+            </li>
+            <li>
               Monitor controller: <code>node tools/bases-loaded-monitor-test.mjs</code>
               — 99 checks, including the export/download wiring, including the live-slate rows, the scheduled-game
               row, the off-day message, the held watch during a delay, and the
@@ -695,7 +710,7 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              270 checks: every internal link target on every page exists, no
+              276 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still
@@ -719,6 +734,23 @@
               (<code>.github/workflows/pages.yml</code>) — two publishers for
               one site. The workflow was removed, and the test suite now fails
               if one is added back.
+            </li>
+            <li>
+              <span class="doc-badge ok">Shipped</span>
+              <strong>Always-on watching without a browser</strong> (the number
+              one limitation above). <code>tools/watcher.mjs</code> is one
+              dependency-free file that requires the site's rules engine
+              verbatim, polls the same official endpoints with the same
+              cadences and the same target rule, keeps its de-duplication state
+              on disk so a restart never re-alerts, appends every alert to a
+              JSONL log where each record carries the exact
+              <code>statsapi.mlb.com</code> snapshot URL it was read from, and
+              delivers through a webhook or ntfy when configured. It reports a
+              failed channel with its reason — never as delivered — and it never
+              guesses from play text or event names. Covered by
+              <code>tools/watcher-test.mjs</code> (85 checks) in CI. What remains
+              is hosting and scheduling, which is a deployment decision rather
+              than missing code.
             </li>
             <li>
               <span class="doc-badge ok">Shipped</span>

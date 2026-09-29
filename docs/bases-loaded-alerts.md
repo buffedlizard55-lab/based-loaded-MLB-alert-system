@@ -101,9 +101,22 @@ A fresh browser with no dedup state alerts on an already-active matching situati
 
 On-page alerts always work while monitoring. Desktop notifications require a separate user opt-in for this monitor, browser support and permission; global permission previously granted to another page does not automatically opt this monitor in. Unsupported constructors/denied permission are handled without interrupting polling. Sound is off until enabled by a gesture each session, which unlocks AudioContext and plays a preview. Several games matching in one scan share one chime, but have separate alert records/desktop notices.
 
-This static client is **not** guaranteed background delivery, push, SMS or email monitoring. It does not run with a hidden/closed tab. It relies on publication timing in MLB's feed. Short-lived situations between polls, network outages and time away from the monitor can be missed. History is only what this browser observed, not a reconstruction of every plate appearance. A server-side watcher and delivery service would be a separate deployment if always-on monitoring is required.
+An optional server-side watcher ships with this repository: `tools/watcher.mjs` requires the same `assets/js/bases-loaded-core.js`, polls the official endpoints with the same cadences, de-duplicates across restarts (state file), appends every alert to a JSONL log whose records carry the exact official snapshot URL, and can push to a phone through `WATCHER_WEBHOOK_URL` (JSON POST) or `WATCHER_NTFY_TOPIC` (ntfy). It still needs an always-on machine to run on — the repository hosts nothing for you — and its coverage is only as good as that machine's uptime and network.
+
+As a static client, the page is **not** guaranteed background delivery, push, SMS or email monitoring. It does not run with a hidden/closed tab. It relies on publication timing in MLB's feed. Short-lived situations between polls, network outages and time away from the monitor can be missed. History is only what this browser observed, not a reconstruction of every plate appearance. Always-on monitoring therefore means running `tools/watcher.mjs` (or an equivalent) yourself; the page remains the zero-setup option.
 
 MLB data-use terms and the inherited application's compliance notes still apply; see [api-compliance.md](api-compliance.md).
+
+## Always-on watcher (no browser)
+
+```bash
+node tools/watcher.mjs                                  # watch until stopped
+WATCHER_ONCE=1 node tools/watcher.mjs                   # one cycle, then exit (cron)
+WATCHER_NTFY_TOPIC=my-loaded-late node tools/watcher.mjs  # push to the ntfy phone app
+WATCHER_WEBHOOK_URL=https://… node tools/watcher.mjs      # or POST JSON to your own hook
+```
+
+Same discovery (today + yesterday in America/New_York, 15 s), same late-inning cadence (2 s), same target rule (`scanTarget`) and same situation logic as the pages — the only difference is that it does not need a browser. Alerts go to stdout, to `data/watcher-alerts.jsonl` (one JSON record per line, each carrying `officialSource`), and to whichever push channels are configured. Dedup state lives in `data/watcher-state.json`, so restarting or running it from cron never re-alerts the same situation. A failed channel is reported with its reason; it is never reported as delivered. `node tools/watcher-test.mjs` drives all of that with a stubbed network and clock.
 
 ## Tests and demo
 

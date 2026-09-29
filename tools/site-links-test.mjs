@@ -257,6 +257,7 @@ for (const suite of [
   "tools/bases-loaded-test.mjs",
   "tools/bases-loaded-monitor-test.mjs",
   "tools/bases-loaded-strip-test.mjs",
+  "tools/watcher-test.mjs",
   "tools/site-links-test.mjs",
 ])
   ok(smokeWorkflow.includes(suite), `CI runs ${suite}`);
@@ -317,6 +318,19 @@ for (const [file, label] of [
 
 /* ------------------------------------------------------------- assets */
 
+ok(
+  exists("tools/watcher.mjs") && exists("tools/watcher-test.mjs"),
+  "The always-on watcher and its suite ship together",
+);
+ok(
+  read("tools/watcher.mjs").includes("bases-loaded-core.js"),
+  "The watcher reuses the shared rules engine (no forked copy of the rules)",
+);
+ok(
+  read(".gitignore").includes("watcher-state.json"),
+  "Each deployment's watcher state stays out of version control",
+);
+
 for (const asset of [
   "assets/js/api.js",
   "assets/js/bases-loaded-core.js",
@@ -341,7 +355,8 @@ function documentedSiteCount(file, pattern) {
 const readmeCount = documentedSiteCount("README.md", /([\d,]+) site checks/);
 const pageCount = documentedSiteCount(
   "verification.html",
-  /static site by ([\d,]+) checks/,
+  // Tolerant of prose reflow: the sentence may wrap between the words.
+  /static site by\s+([\d,]+)\s+checks/,
 );
 ok(
   readmeCount !== null && pageCount !== null,
