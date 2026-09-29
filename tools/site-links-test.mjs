@@ -341,6 +341,27 @@ ok(
     read("docs/watcher-deployment.md").includes("deploy/Dockerfile"),
   "The deployment guide documents the recipes it ships",
 );
+// The sources page keeps a "recommended next work" list next to a shipped log.
+// A list that still advertises something the log says shipped reads as if the
+// work were outstanding — check the two against each other for the features
+// this project has already delivered.
+{
+  const page = read("verification.html");
+  const listStart = page.indexOf("Recommended next work:");
+  const listEnd = page.indexOf("</li>", listStart);
+  const nextWork = listStart > -1 ? page.slice(listStart, listEnd) : "";
+  ok(nextWork.length > 0, "The sources page still lists recommended next work");
+  for (const [pattern, label] of [
+    [/host and schedule/i, "hosting the watcher"],
+    [/history export \(CSV\/JSON\)/i, "the history export"],
+    [/always-on server watcher\s+with Web Push/i, "the always-on watcher itself"],
+  ])
+    ok(!pattern.test(nextWork), `Next work no longer lists ${label}, which already shipped`);
+  ok(
+    /web push/i.test(nextWork),
+    "Next work still leads with the genuinely outstanding item (Web Push)",
+  );
+}
 ok(
   read(".dockerignore").split("\n").some((line) => line.trim() === ".git"),
   ".dockerignore keeps the repository history out of a published image context",
