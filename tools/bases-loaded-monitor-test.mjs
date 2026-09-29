@@ -295,7 +295,7 @@ check(
   "Reloading bases in same inning sends second alert",
 );
 check(app.nodes["history-count"].textContent, 2, "Reload saved separately");
-const persisted = JSON.parse(app.storage.get("loaded-late:v2"));
+const persisted = JSON.parse(app.storage.get("loaded-late:v3"));
 check(
   persisted.history[1].runners[0].name,
   "A",
@@ -323,7 +323,7 @@ check(
   "Final game removed despite leftover bases",
 );
 check(
-  JSON.parse(app.storage.get("loaded-late:v2")).history[0].homeScore,
+  JSON.parse(app.storage.get("loaded-late:v3")).history[0].homeScore,
   4,
   "Final score never overwrites historical tie",
 );
@@ -357,15 +357,15 @@ check(
   true,
   "Persistence failure disclosed",
 );
-const demoStore = new Map([["loaded-late:v2", "leave untouched"]]);
+const demoStore = new Map([["loaded-late:v3", "leave untouched"]]);
 const demo = boot({ demo: true, storage: demoStore });
 await settle();
 check(demo.state.scheduleCalls, 0, "Demo never calls live schedule");
-for (let i = 0; i < 8; i++) await demo.click("demo-next");
+for (let i = 0; i < 14; i++) await demo.click("demo-next");
 check(
   demo.nodes["history-count"].textContent,
-  3,
-  "Demo exercises first load, reload, bottom 14",
+  4,
+  "Demo exercises first load, reload, error-load, bottom 14",
 );
 check(
   demo.nodes.current.innerHTML.includes("BOT 14"),
@@ -373,7 +373,7 @@ check(
   "Demo shows extra innings",
 );
 check(
-  demoStore.get("loaded-late:v2"),
+  demoStore.get("loaded-late:v3"),
   "leave untouched",
   "Demo isolated from live history",
 );
