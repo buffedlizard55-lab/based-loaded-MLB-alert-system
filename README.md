@@ -211,12 +211,16 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 
 **Suggested work, in priority order (next session / the session after)**
 
-1. **Confirm the published site after the next merge (in progress).** The site is live
-   and the deployment is verified; the remaining check is that the *content* published
-   from `main` after the next merge matches this repository, which
-   `tools/deployed-site-test.mjs` now asserts in CI on every merge to `main` and nightly.
-   Watch the first `published-site` run on `main` and read its log — a red run there is
-   the only signal that the public copy drifted.
+1. ~~Confirm the published site.~~ **Done, and now guarded.** The site is live at
+   [buffedlizard55-lab.github.io/based-loaded-MLB-alert-system](https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/),
+   and the deployed copy was read back on 2026-09-29 to confirm it is the copy in this
+   repository — including that it loads the official schedule from a real browser (4 MLB
+   games on the slate, each with its provenance label) and shows the history export
+   controls. The guard is `tools/deployed-site-test.mjs`: every published page and alert
+   asset must be **byte-identical** to the merge commit, checked after each merge to
+   `main` and nightly. Its first run failed for a timing reason (Pages builds after the
+   merge commit), which is fixed — it now waits for the deployment to catch up — and the
+   run after that was green. Nothing here needs doing again unless a run goes red.
 2. **Live-fire verification:** on the next tied game entering bot 9+, keep the monitor
    visible and record watch → load → chime → notification with the game link as proof.
    The new live slate makes this easy to document (the row shows the exact snapshot age).
