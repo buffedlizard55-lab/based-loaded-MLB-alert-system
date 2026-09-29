@@ -48,6 +48,8 @@ function boot({
   scheduleFails = false,
   storageFails = false,
   multiple = null,
+  downloadsUnavailable = false,
+  clipboardUnavailable = false,
 } = {}) {
   const nodes = Object.fromEntries(
     ids.map((id) => [
@@ -85,6 +87,10 @@ function boot({
     snapshotCalls: 0,
     clock: Date.now(),
     hold: null,
+    blobs: [],
+    anchors: [],
+    clipboard: [],
+    blockDownloads: downloadsUnavailable,
   };
   class Clock extends Date {
     constructor(...args) {
@@ -109,15 +115,60 @@ function boot({
   const document = {
     hidden: false,
     title: "",
+    body: { appendChild() {} },
+    createElement: () => {
+      const anchor = {
+        href: "",
+        download: "",
+        rel: "",
+        clicked: 0,
+        click() {
+          this.clicked += 1;
+        },
+        remove() {},
+      };
+      state.anchors.push(anchor);
+      return anchor;
+    },
     getElementById: (id) => nodes[id],
     addEventListener: (key, fn) => (listeners[key] = fn),
   };
+  // Node’s URL with the two blob statics the download path uses; keeping the
+  // real constructor means the absolute-link branch is exercised too.
+  class TestURL extends URL {
+    static createObjectURL(blob) {
+      if (state.blockDownloads) throw Error("blocked");
+      state.blobs.push(blob);
+      return `blob:test-${state.blobs.length}`;
+    }
+    static revokeObjectURL() {}
+  }
   const context = vm.createContext({
     document,
-    location: { search: demo ? "?demo=1" : "" },
+    location: {
+      search: demo ? "?demo=1" : "",
+      href: "https://example.test/bases-loaded.html",
+    },
     Date: Clock,
     Intl,
     URLSearchParams,
+    URL: TestURL,
+    Blob: class {
+      constructor(parts, options) {
+        this.parts = parts;
+        this.type = options?.type || "";
+      }
+    },
+    navigator: clipboardUnavailable
+      ? {}
+      : {
+          clipboard: {
+            writeText: (text) => {
+              state.clipboard.push(text);
+              return Promise.resolve();
+            },
+          },
+        },
     console,
     Notification: Notice,
     localStorage: {
@@ -199,6 +250,22 @@ check(
   "The summary still reports zero games on radar",
 );
 
+const fresh = boot({ clipboardUnavailable: true });
+await settle();
+await fresh.click("export-json");
+check(fresh.state.blobs.length, 0, "An empty history exports nothing");
+check(
+  fresh.nodes["export-note"].textContent.includes("No observed alerts yet"),
+  true,
+  "An empty history says why there is nothing to export",
+);
+await fresh.click("copy-evidence");
+check(
+  fresh.nodes["export-note"].textContent.includes("nothing to cite"),
+  true,
+  "With no history there is no evidence line to copy",
+);
+
 const app = boot();
 await settle();
 check(app.state.scheduleCalls, 2, "Fetch current and prior MLB dates");
@@ -229,6 +296,79 @@ check(
 );
 check(app.notices.length, 1, "One desktop notification after explicit opt-in");
 check(app.nodes["history-count"].textContent, 1, "Store first alert");
+
+/* ---- export + evidence: read-only, wired to the history this page observed */
+await app.click("export-json");
+check(app.state.blobs.length, 1, "Export JSON hands one file payload to the browser");
+const exported = JSON.parse(app.state.blobs[0].parts.join(""));
+check(exported.schema, "loaded-late/alerts@1", "The exported file declares its schema");
+check(exported.alerts.length, 1, "The export contains the alert this page observed");
+check(
+  exported.alerts[0].officialSource,
+  "https://statsapi.mlb.com/api/v1.1/game/123/feed/live",
+  "Each exported record carries the exact official snapshot it came from",
+);
+check(
+  exported.alerts[0].gameUrl,
+  "https://example.test/game.html?gamePk=123",
+  "Exported game links are absolute when the browser gives a base URL",
+);
+check(
+  app.state.anchors[0].download,
+  `loaded-late-alerts-${new Date(app.state.clock).toISOString().slice(0, 10)}.json`,
+  "The download is named with its UTC date",
+);
+check(app.state.anchors[0].clicked, 1, "The download link is clicked exactly once");
+check(
+  app.nodes["export-note"].textContent.includes("Saved") &&
+    app.nodes["export-note"].textContent.includes("1 alert"),
+  true,
+  "The export states what was saved and how much",
+);
+check(
+  app.nodes["export-note"].textContent.includes("this browser"),
+  true,
+  "The export says the history is per browser (so the file is the record)",
+);
+
+await app.click("export-csv");
+check(app.state.blobs.length, 2, "Export CSV hands a second payload");
+const csvText = app.state.blobs[1].parts.join("");
+check(csvText.startsWith("observedAt,"), true, "CSV starts with the column header");
+check(csvText.includes("\r\n"), true, "CSV uses RFC 4180 line endings");
+check(csvText.split("\r\n").length, 3, "CSV carries the header, the alert, and a trailing newline");
+check(app.state.blobs[1].type, "text/csv;charset=utf-8", "CSV is labelled as CSV");
+
+await app.click("copy-evidence");
+check(app.state.clipboard.length, 1, "Copying the evidence line reaches the clipboard");
+check(
+  app.state.clipboard[0].includes("https://statsapi.mlb.com/api/v1.1/game/123/feed/live"),
+  true,
+  "The evidence line carries the official source link",
+);
+check(
+  app.state.clipboard[0].includes("BOT 9"),
+  true,
+  "The evidence line states the inning it was observed in",
+);
+
+await app.click("copy-evidence");
+check(app.state.clipboard.length, 2, "Copying again replaces the clipboard line");
+check(
+  app.nodes["export-note"].textContent.includes("copied"),
+  true,
+  "A successful copy says so",
+);
+
+app.state.blockDownloads = true;
+await app.click("export-json");
+check(
+  app.nodes["export-note"].textContent.includes("blocked"),
+  true,
+  "A blocked download says so instead of claiming a file was saved",
+);
+app.state.blockDownloads = false;
+
 await app.click("refresh");
 check(app.notices.length, 1, "Repeated scan not announced");
 check(

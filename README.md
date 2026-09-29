@@ -185,12 +185,14 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    and every 5 s on the strip. A situation that appears and resolves inside one gap, or
    upstream publication delays, can be missed. Nothing is back-filled.
 3. **Per-browser history.** Alerts live in this browser's `localStorage` (7 days, max 200
-   entries). Not cross-device, not a full historical replay of every game.
+   entries). Not cross-device, not a full historical replay of every game — which is why
+   the monitor now **exports** the history (JSON/CSV) and can copy a one-line evidence
+   citation carrying the official snapshot link: the file, not the browser, is the record.
 4. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
-5. **Live end-to-end proof still pending.** Deterministic suites cover 11,727 rule states
-   plus 76 monitor, 160 strip and 258 site checks, and a published-site check verifies the
+5. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
+   plus 99 monitor, 160 strip and 270 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment — the next live tied bottom-9+ game is
    the real acceptance test.
@@ -224,7 +226,13 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    assumption. The extra-inning `linescore.offense` shape used by the slate board is the
    same occupied-base object already verified for the alert snapshot; anything new must
    be fetched and checked the same way.
-5. **History export** (CSV/JSON) and a shareable per-alert link.
+5. ~~History export (CSV/JSON) and a shareable per-alert link.~~ **Shipped this session**:
+   *Export JSON*, *Export CSV* and *Copy newest evidence line* on the monitor, each record
+   carrying the exact official snapshot URL it was read from, plus an *Official snapshot*
+   link on every history card. A shareable link deliberately points at the **official
+   record** rather than at this site's own history, because history is per browser and a
+   link into it would be empty for anyone else — see limitation 3. Still open: a
+   cross-device store (the always-on watcher in item 3 is the natural home for it).
 6. **Mobile daily-driver polish:** installable PWA manifest, vibration on alert.
 
 ## Session log — 2026-09-29 (three verification passes)
@@ -315,13 +323,29 @@ line, so what was checked, what was corrected and what is still open is written 
   pending; the board now distinguishes a scan that has not answered from an official
   schedule that really has no games today ("No games scheduled on this date"). Covered by
   a new monitor-suite scenario (74 → 76 checks).
+- **Alert history is now a record you can keep (work item 5, shipped).** The monitor
+  exports its history as JSON (`loaded-late/alerts@1`, with the definition, the rule
+  number and the official source inside the file) or CSV (RFC 4180), every record
+  carrying the exact `statsapi.mlb.com` snapshot URL it was read from; each history card
+  links to that snapshot; and *Copy newest evidence line* puts a one-line citation —
+  inning, tied score, outs, count, matchup, observation time, official link — on the
+  clipboard. The serializers are pure functions in `bases-loaded-core.js` so the bytes are
+  tested directly: CSV quoting and CRLF, blank and malformed records, JSON schema and
+  stamping, the evidence line (which omits what was not observed rather than inventing
+  it), and UTC file naming. Verified in a real DOM (jsdom, this session): two polls
+  produce one saved alert, the export downloads
+  `loaded-late-alerts-2026-09-29.json` containing that alert, CSV arrives as
+  `text/csv;charset=utf-8`, the evidence line copies, and a blocked download or clipboard
+  says so instead of claiming success.
+  Documented limitation, deliberately not papered over: history is per browser, so a
+  shareable link points at the **official** record, not at a private local list.
 - **Deployment check upgraded to byte equality.** The published-site check asserted ids
   and sentences, which a stale-but-similar deployment could still satisfy. It now also
   fetches every published page and alert asset and requires it to be **byte-identical**
   to the file in this repository (29 checks against a local dry run), reporting the first
   differing byte when it is not.
-- Deterministic suites after the change: rules 11,727 · monitor 76 · strip 160 · site
-  258.
+- Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · site
+  270.
 
 ## Original MLB Live PBP documentation
 

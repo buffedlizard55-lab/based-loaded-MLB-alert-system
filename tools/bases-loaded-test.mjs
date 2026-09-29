@@ -494,6 +494,156 @@ for (const field of [
     `Projection includes ${field}`,
   );
 }
+/* ------------------------------------------------------ alert-history export */
+
+const alertEntry = {
+  id: "123:9:1",
+  gamePk: 123,
+  inning: 9,
+  awayScore: 4,
+  homeScore: 4,
+  outs: 2,
+  balls: 3,
+  strikes: 2,
+  tension: 5,
+  tensionLabel: "HIGH",
+  lastEvent: 'Single to left, "Ramos" scores, runners on 1st & 2nd',
+  runners: [
+    { id: 1, name: "First Runner" },
+    { id: 2, name: "Second Runner" },
+    { id: 3, name: "Third Runner" },
+  ],
+  batter: { id: 9, name: "Batter, Jr." },
+  pitcher: { id: 7, name: 'P "Q"' },
+  onDeck: { id: 10, name: "Next Up" },
+  away: "Visitors",
+  home: "Home",
+  observedAt: Date.parse("2026-09-29T05:41:00Z"),
+};
+
+check(rules.historyColumns[0], "observedAt", "Export columns start with the observation time");
+check(
+  rules.historyColumns.includes("officialSource") &&
+    rules.historyColumns.includes("gameUrl"),
+  true,
+  "Every exported record carries its own source link",
+);
+const record = rules.historyRecord(alertEntry);
+check(record.officialSource, "https://statsapi.mlb.com/api/v1.1/game/123/feed/live",
+  "The official source is the exact snapshot endpoint for that game");
+check(record.gameUrl, "game.html?gamePk=123", "The default game link is relative (subpath safe)");
+check(
+  rules.historyRecord(alertEntry, (pk) => `https://example.test/game.html?gamePk=${pk}`).gameUrl,
+  "https://example.test/game.html?gamePk=123",
+  "A caller can hand in an absolute-link builder",
+);
+check(record.halfInning, "bottom", "The alert is defined only for a bottom half");
+check(
+  [record.runnerFirst, record.runnerSecond, record.runnerThird],
+  ["First Runner", "Second Runner", "Third Runner"],
+  "All three runners are exported by base",
+);
+check(
+  [record.batter, record.pitcher, record.onDeck],
+  ["Batter, Jr.", 'P "Q"', "Next Up"],
+  "Matchup is exported without markup",
+);
+check(record.observedAtIso, "2026-09-29T05:41:00.000Z", "Observation time is exported as ISO");
+
+const empty = rules.historyRecord({});
+check(
+  [empty.gamePk, empty.officialSource, empty.gameUrl, empty.observedAtIso],
+  [null, "", "", ""],
+  "A record with no game is empty, never guessed",
+);
+check(
+  Object.values(rules.historyRecord({ gamePk: 1, away: undefined, batter: null })).includes(
+    "undefined",
+  ),
+  false,
+  "No field is ever the string 'undefined'",
+);
+
+const csv = rules.historyCSV([alertEntry]);
+const csvLines = csv.split("\r\n");
+check(csvLines[0], rules.historyColumns.join(","), "CSV header is the column list");
+check(csvLines.length, 3, "CSV has a header row, one alert, and a trailing newline");
+check(csv.endsWith("\r\n"), true, "CSV ends with a CRLF (RFC 4180)");
+check(
+  csvLines[1].includes('"Batter, Jr."'),
+  true,
+  "A comma inside a name is quoted, not split into two columns",
+);
+check(csvLines[1].includes('"P ""Q"""'), true, "Quotes inside a name are doubled");
+check(
+  csvLines[1].split(",").length >= rules.historyColumns.length,
+  true,
+  "The quoted row still carries every column",
+);
+check(rules.historyCSV([]), `${rules.historyColumns.join(",")}\r\n`, "An empty history exports a header only");
+check(rules.historyCSV([{}, {}]).split("\r\n").length, 4, "Blank records still produce one row each");
+
+const json = JSON.parse(rules.historyJSON([alertEntry], { now: Date.parse("2026-09-29T06:00:00Z") }));
+check(json.schema, "loaded-late/alerts@1", "JSON export carries a schema version");
+check(json.generatedAt, "2026-09-29T06:00:00.000Z", "JSON export is stamped with the generation time");
+check(json.alerts.length, 1, "JSON export contains every observed alert");
+check(
+  /bottom of the 9th/.test(json.alertDefinition) && /5\.08\(b\)/.test(json.alertDefinition),
+  true,
+  "The definition and its rule number travel with the file",
+);
+check(
+  /statsapi\.mlb\.com/.test(json.sources.official) &&
+    /mlbstatic\.com/.test(json.sources.rules),
+  true,
+  "The official data source and the rulebook link travel with the file",
+);
+check(
+  rules.historyJSON([alertEntry], { now: 0 }),
+  rules.historyJSON([alertEntry], { now: 0 }),
+  "The same history and clock produce identical bytes",
+);
+
+const line = rules.evidenceLine(alertEntry);
+check(line.includes("BOT 9"), true, "Evidence line states the inning");
+check(line.includes("Visitors 4–4 Home"), true, "Evidence line states the tied score");
+check(line.includes("2 outs") && line.includes("count 3-2"), true, "Evidence line states outs and count");
+check(line.includes("bases loaded"), true, "Evidence line names the situation");
+check(line.includes("Batter, Jr. vs P \"Q\""), true, "Evidence line names the matchup");
+check(
+  line.includes("https://statsapi.mlb.com/api/v1.1/game/123/feed/live"),
+  true,
+  "Evidence line carries the official snapshot link",
+);
+check(line.includes("game.html?gamePk=123"), true, "Evidence line carries the game link");
+check(line.includes("undefined"), false, "Evidence line never prints undefined");
+check(
+  rules.evidenceLine({}, () => "").length > 0 &&
+    !rules.evidenceLine({}, () => "").includes("· ·"),
+  true,
+  "An empty record still yields a clean, non-empty line",
+);
+check(
+  rules.evidenceLine({ gamePk: 5, away: "A", home: "B", inning: 12 }),
+  "BOT 12 · A at B · bases loaded · official https://statsapi.mlb.com/api/v1.1/game/5/feed/live · game game.html?gamePk=5",
+  "A record with no score or count omits them instead of inventing them",
+);
+check(
+  rules.historyFileName("json", Date.parse("2026-09-29T05:41:00Z")),
+  "loaded-late-alerts-2026-09-29.json",
+  "Export file name is dated in UTC",
+);
+check(
+  rules.historyFileName("csv", Date.parse("2026-09-29T05:41:00Z")),
+  "loaded-late-alerts-2026-09-29.csv",
+  "CSV export gets a .csv name",
+);
+check(
+  rules.historyFileName("anything", Date.parse("2026-09-29T05:41:00Z")).endsWith(".json"),
+  true,
+  "An unknown export kind falls back to JSON",
+);
+
 check(
   readFileSync(new URL("../index.html", import.meta.url), "utf8"),
   readFileSync(new URL("../bases-loaded.html", import.meta.url), "utf8"),

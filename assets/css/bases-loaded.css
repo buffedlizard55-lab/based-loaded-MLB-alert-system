@@ -1313,3 +1313,33 @@
     font-size: 30px;
   }
 }
+
+/* Alert-history export (read-only): the toolbar, its honest status note, and
+   the per-record link to the official snapshot the alert was read from. */
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 18px;
+}
+.history-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  flex: 1 1 240px;
+}
+.history-source {
+  color: var(--lime);
+  font-size: 11px;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+.history-source:hover {
+  border-bottom-style: solid;
+}
+@media (max-width: 560px) {
+  .history-actions .btn {
+    flex: 1 1 100%;
+  }
+}

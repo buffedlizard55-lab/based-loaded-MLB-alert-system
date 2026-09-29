@@ -295,6 +295,106 @@
         : `${games.size} game${games.size === 1 ? "" : "s"} on radar · ${live} live · schedule scan 15s · late innings 2s · updated ${time(now)}`;
   }
 
+  /* ------------------------------------------------------------------------
+   * History export (read-only). Nothing here can feed data back into the
+   * detection path: the exporters only read the records the monitor already
+   * saved, and the only DOM they touch is the export buttons and their note.
+   * --------------------------------------------------------------------- */
+
+  /** An absolute game link when the browser gives us a base URL, else relative. */
+  const gameUrlFor = (gamePk) => {
+    const relative = `game.html?gamePk=${encodeURIComponent(gamePk)}`;
+    try {
+      return new URL(relative, location.href).href;
+    } catch (_) {
+      return relative;
+    }
+  };
+
+  function exportNote(message) {
+    const node = $("export-note");
+    if (node) node.textContent = message;
+  }
+
+  /** Hand the file to the browser. Returns false when it cannot (no Blob/URL). */
+  function saveText(name, text, mime) {
+    try {
+      if (typeof Blob !== "function" || typeof URL?.createObjectURL !== "function")
+        return false;
+      const url = URL.createObjectURL(new Blob([text], { type: mime }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.rel = "noopener";
+      (document.body || document.documentElement).appendChild(link);
+      link.click();
+      if (typeof link.remove === "function") link.remove();
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (_) {
+          /* the download already started; nothing to clean up */
+        }
+      }, 1000);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function copyText(value) {
+    try {
+      const write = navigator?.clipboard?.writeText;
+      if (typeof write !== "function") return false;
+      const pending = write.call(navigator.clipboard, value);
+      // Browsers that refuse permission reject this promise, and a copy that
+      // did not happen must not be reported as one.
+      if (pending && typeof pending.catch === "function")
+        pending.catch(() =>
+          exportNote("Clipboard permission was refused — export the history instead."),
+        );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  const exportCaveat =
+    "history lives in this browser (7 days, 200 records), so an exported file is the durable record";
+
+  function exportHistory(kind) {
+    if (!history.length) {
+      exportNote("No observed alerts yet — the file would be empty.");
+      return;
+    }
+    const name = rules.historyFileName(kind);
+    const text =
+      kind === "csv"
+        ? rules.historyCSV(history, gameUrlFor)
+        : rules.historyJSON(history, { link: gameUrlFor });
+    const mime =
+      kind === "csv" ? "text/csv;charset=utf-8" : "application/json;charset=utf-8";
+    const saved = saveText(name, text, mime);
+    exportNote(
+      `${saved ? `Saved ${name}` : "This browser blocked the file download"} · ${history.length} alert${
+        history.length === 1 ? "" : "s"
+      } · ${exportCaveat}`,
+    );
+  }
+
+  function copyEvidence() {
+    if (!history.length) {
+      exportNote("No observed alerts yet — nothing to cite.");
+      return;
+    }
+    const line = rules.evidenceLine(history[0], gameUrlFor);
+    exportNote(
+      copyText(line)
+        ? "Newest evidence line copied — paste it anywhere. It carries the official snapshot link."
+        : "This browser blocked clipboard access. Export the history instead, or open the official link on the card.",
+    );
+  }
+
   function feedback(message) {
     $("feedback").textContent = message;
   }
@@ -597,6 +697,9 @@
           ${result.pitcher ? ` · Pitcher: ${escape(result.pitcher.name)}` : ""}
           ${result.balls != null && result.strikes != null ? `<br>Count: ${escape(countDisplay(result.balls, result.strikes))}` : ""}
           ${result.tension != null ? ` · Tension: ${escape(result.tensionLabel)}` : ""}
+          <br><a class="history-source" href="${escape(
+            rules.historyRecord({ gamePk: game.gamePk }).officialSource,
+          )}">Official snapshot (statsapi.mlb.com) ↗</a>
         </div>`
       : "";
 
@@ -936,6 +1039,9 @@
   });
 
   $("refresh").addEventListener("click", () => (demo ? render() : poll(true)));
+  $("export-json").addEventListener("click", () => exportHistory("json"));
+  $("export-csv").addEventListener("click", () => exportHistory("csv"));
+  $("copy-evidence").addEventListener("click", copyEvidence);
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
     if (document.hidden) {
