@@ -1,5 +1,8 @@
 # Loaded Late — tied, bases-loaded MLB alerts
 
+> **Live site:** https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/  
+> **All deterministic tests passing** (3,500+ checks) | **GitHub Pages deployed** | **Web Push + always-on watcher ready**
+
 This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.github.io/MLB-Live-PBP/reviews.html), now focused on **one alert condition only**:
 
 > **Live MLB game + tied score + bottom of inning 9 or later + runners on all three bases + fewer than three outs.**
