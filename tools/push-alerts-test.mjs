@@ -32,6 +32,22 @@ const ok = (condition, label) => {
   checks += 1;
 };
 
+// A red CI job should name the failing check: job logs are not readable from
+// every environment, but workflow annotations are.
+const reportFailure = (error) => {
+  const label = String(error?.message || error).split("\n")[0];
+  const detail =
+    error?.actual !== undefined || error?.expected !== undefined
+      ? ` (actual ${JSON.stringify(error.actual)} vs expected ${JSON.stringify(error.expected)})`
+      : "";
+  console.log(`::error title=Phone-alert checks::${label}${detail}`);
+  process.exit(1);
+};
+// A thrown assertion in a top-level `await` arrives as a module rejection, so
+// both paths are covered.
+process.on("uncaughtException", reportFailure);
+process.on("unhandledRejection", reportFailure);
+
 // RFC 8292 §2.4 publishes this uncompressed P-256 public key; it is a real key,
 // so decoding it proves the browser-side conversion, not just the happy path.
 const RFC_PUBLIC_KEY = "BA1Hxzyi1RUM1b5wjxsn7nGxAszw2u61m164i3MrAIxHF6YK5h4SDYic-dRuU_RCPCfA5aq9ojSwk5Y2EmClBPs";
@@ -492,3 +508,4 @@ ok(!/atob\(/.test(source.split("base64urlToBytes")[0]), "…and does not touch t
 ok(/WATCHER_/.test(readFileSync(new URL("../index.html", import.meta.url), "utf8")), "index.html names the watcher setting the entry belongs to");
 
 console.log(`✓ ${checks} phone-alert checks passed`);
+
