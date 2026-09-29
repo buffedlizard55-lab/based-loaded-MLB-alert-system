@@ -315,6 +315,11 @@ line, so what was checked, what was corrected and what is still open is written 
   pending; the board now distinguishes a scan that has not answered from an official
   schedule that really has no games today ("No games scheduled on this date"). Covered by
   a new monitor-suite scenario (74 → 76 checks).
+- **Deployment check upgraded to byte equality.** The published-site check asserted ids
+  and sentences, which a stale-but-similar deployment could still satisfy. It now also
+  fetches every published page and alert asset and requires it to be **byte-identical**
+  to the file in this repository (29 checks against a local dry run), reporting the first
+  differing byte when it is not.
 - Deterministic suites after the change: rules 11,727 · monitor 76 · strip 160 · site
   258.
 
