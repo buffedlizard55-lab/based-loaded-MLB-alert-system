@@ -10,7 +10,13 @@
     PREFS = "loaded-late:preferences";
   const WEEK = 7 * 86400000,
     DISCOVERY_MS = 15000,
-    SCAN_MS = 2000;
+    SCAN_MS = 2000,
+    QUIET_MS = 90000;
+  // Identifies this page instance in the shared log, so only *other* pages
+  // (the site-wide strip, or another tab) can suppress a chime. A confirmed
+  // exit and reload recorded by this same page still alerts again.
+  const PAGE_ID =
+    Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   let history = [],
     states = {},
     games = new Map(),
@@ -120,6 +126,9 @@
       ),
     );
     if (demo) return;
+    // Merge before every write: this monitor saves on each poll, and a strip
+    // alert recorded by another page in the meantime must never be clobbered.
+    mergeSharedHistory();
     try {
       localStorage.setItem(STORE, JSON.stringify({ history, states }));
     } catch (_) {
@@ -127,6 +136,32 @@
         "Could not save history. Live monitoring still works, but history may not survive a refresh.",
       );
     }
+  }
+
+  /**
+   * Re-read the shared alert log and union it with this page's memory by id.
+   * The monitor and the site-wide strip write one log
+   * (localStorage 'loaded-late:v3'); merging at decision time means an alert
+   * observed on the other page is (a) never dropped by our next save and
+   * (b) able to quiet our chime inside the cross-page window.
+   */
+  function mergeSharedHistory() {
+    if (demo) return history;
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORE) || "{}");
+      const byId = new Map();
+      for (const entry of [
+        ...(Array.isArray(saved.history) ? saved.history : []),
+        ...history,
+      ])
+        if (entry && entry.id) byId.set(entry.id, entry);
+      history = [...byId.values()]
+        .sort((a, b) => (b.observedAt || 0) - (a.observedAt || 0))
+        .slice(0, 200);
+    } catch (_) {
+      // Unreadable log: fall back to this page's own memory.
+    }
+    return history;
   }
 
   function updateNotificationButton() {
@@ -216,9 +251,25 @@
         : "Incomplete official data — waiting for confirmation",
     });
     if (!observation.event) return false;
-    history.unshift(observation.event);
-    announce(observation.event);
-    return true;
+    // Cross-page quiet window: if the other page of this site (strip or other
+    // tab) already chimed for this exact game + inning moments ago, record the
+    // observation but stay silent — entries this page wrote itself never
+    // count, so a confirmed exit and reload still alerts again here.
+    const repeated = rules.recentSharedAlert(
+      mergeSharedHistory(),
+      game.gamePk,
+      observation.event.inning,
+      now,
+      QUIET_MS,
+      PAGE_ID,
+    );
+    history.unshift({
+      ...observation.event,
+      observer: PAGE_ID,
+      crossPage: repeated,
+    });
+    if (!repeated) announce(observation.event);
+    return !repeated;
   }
 
   function card(game, result, options = {}) {

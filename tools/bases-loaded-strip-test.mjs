@@ -651,11 +651,23 @@ const feedFor = (game) => ({
   );
   check(app.document.title, "MLB Live PBP — Replay Feed", "Original title restored exactly");
 
+  // Sound armed before the reload: a confirmed exit + reload is a genuine new
+  // situation and must chime again. The quiet window only ever counts entries
+  // written by ANOTHER page (observer-scoped), never this strip's own alert.
+  await app.click(app.button("Sound off"));
+  const armed = app.state.oscillators;
+  check(app.button("Sound on").textContent, "Sound on", "Sound armed for the reload");
+
   // Same inning, loaded again: a genuine new situation (documented re-arm).
   app.state.games = [twoOn];
   app.setFeed(11, feedFor(twoOn));
   await app.tick();
   await app.tick();
+  check(
+    app.state.oscillators,
+    armed,
+    "Partial occupancy on the way back never chimes",
+  );
   app.state.games = [loaded];
   app.setFeed(11, feedFor(loaded));
   await app.tick();
@@ -663,6 +675,11 @@ const feedFor = (game) => ({
     JSON.parse(app.storage.get("loaded-late:v3")).history.length,
     2,
     "A confirmed exit and reload can alert again in the same inning",
+  );
+  check(
+    app.state.oscillators,
+    armed + 3,
+    "The reload chimes again — the strip's own earlier alert never suppresses it",
   );
 }
 

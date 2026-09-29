@@ -769,6 +769,19 @@
 .coverage summary {
   cursor: pointer;
 }
+.coverage ul {
+  margin: 8px 0 0;
+  padding-left: 16px;
+}
+.coverage li {
+  color: #95a69a;
+  font-size: 11px;
+  line-height: 1.75;
+  margin-top: 7px;
+}
+.coverage a {
+  color: var(--lime);
+}
 .loaded-footer {
   border-top: 1px solid var(--line);
   margin-top: 25px;

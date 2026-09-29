@@ -43,6 +43,11 @@
   const CROSS_PAGE_QUIET_MS = 90000; // shared-log quiet window (see core)
   const STALE_MS = 12000; // a snapshot older than this is not shown as live
   const CONCURRENCY = 4;
+  // Identifies this page instance in the shared log: entries this page wrote
+  // itself never trigger its own quiet window, so a confirmed exit and reload
+  // still chimes here while another page's recent alert stays silent.
+  const PAGE_ID =
+    Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
   const demo =
     typeof location !== "undefined" &&
@@ -379,14 +384,20 @@
     if (!observation.event) return false;
     // Read the shared log first: if another page of this site already alerted
     // this exact game + inning moments ago, this observation stays silent.
+    // Entries this strip wrote itself are never counted (see PAGE_ID).
     const repeated = rules.recentSharedAlert(
       mergeSharedHistory(),
       game.gamePk,
       observation.event.inning,
       now,
       CROSS_PAGE_QUIET_MS,
+      PAGE_ID,
     );
-    history.unshift({ ...observation.event, crossPage: repeated });
+    history.unshift({
+      ...observation.event,
+      observer: PAGE_ID,
+      crossPage: repeated,
+    });
     history = history.slice(0, MAX_HISTORY);
     dismissed = false;
     if (!repeated) notify(observation.event);

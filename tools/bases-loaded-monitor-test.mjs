@@ -314,6 +314,72 @@ check(
   0,
   "Restored active situation not announced again",
 );
+
+/* -------------------- shared log: no cross-page double alerts ------------
+ * The other page of this site (the strip on reviews.html, or another tab)
+ * recorded this exact game + inning moments ago. This dashboard has its own
+ * in-memory dedup state (not yet active), so it observes a fresh event —
+ * it must record it, mark it, and stay SILENT. Its save must also keep the
+ * other page's entry instead of clobbering it. */
+const crossStorage = new Map();
+const cross = boot({ storage: crossStorage });
+await settle();
+await cross.click("notify");
+check(cross.notices.length, 0, "Opt-in alone never notifies");
+crossStorage.set(
+  "loaded-late:v3",
+  JSON.stringify({
+    history: [
+      {
+        id: "123:9:other-page",
+        gamePk: 123,
+        inning: 9,
+        awayScore: 4,
+        homeScore: 4,
+        outs: 1,
+        runners: [{ id: 1 }, { id: 2 }, { id: 3 }],
+        away: "Away",
+        home: "Home",
+        observedAt: Date.now() - 5000,
+        observer: "other-page",
+      },
+    ],
+    states: {},
+  }),
+);
+cross.state.game.linescore = {
+  ...cross.state.game.linescore,
+  inningState: "Bottom",
+  outs: 1,
+  offense: {
+    first: { id: 1, fullName: "A" },
+    second: { id: 2, fullName: "B" },
+    third: { id: 3, fullName: "C" },
+  },
+};
+await cross.click("refresh");
+check(
+  cross.nodes["active-count"].textContent,
+  1,
+  "Cross-page alert still shown live on this page",
+);
+check(
+  cross.notices.length,
+  0,
+  "No second desktop notice when the other page already alerted",
+);
+const crossLog = JSON.parse(crossStorage.get("loaded-late:v3"));
+check(
+  crossLog.history.some((entry) => entry.crossPage === true),
+  true,
+  "This page's observation is recorded with the crossPage marker",
+);
+check(
+  crossLog.history.some((entry) => entry.id === "123:9:other-page"),
+  true,
+  "Saving never clobbers the other page's entry",
+);
+
 app.state.game.linescore.teams.home.runs = 5;
 app.state.game.status = { abstractGameState: "Final", detailedState: "Final" };
 await app.click("refresh");

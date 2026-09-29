@@ -329,6 +329,104 @@ assert.throws(
   /Incomplete/,
 );
 checks++;
+// The official current/last play travels with the snapshot (live feed shape:
+// liveData.plays.currentPlay.result — verified against the StatsAPI), and
+// evaluate prefers it over any linescore-attached result.
+const playFeed = {
+  gameData: { status: game().status },
+  liveData: {
+    linescore: game().linescore,
+    plays: {
+      currentPlay: {
+        result: { event: "Intentional Walk", description: "Intentional walk." },
+      },
+    },
+  },
+};
+const snap = rules.snapshotGame(game(), playFeed);
+check(
+  snap.lastPlay.event,
+  "Intentional Walk",
+  "Snapshot carries the official current play result",
+);
+check(
+  rules.evaluate(snap).lastEvent,
+  "Intentional Walk",
+  "Evaluate reads the projected play result",
+);
+check(
+  rules.evaluate({
+    ...game(),
+    lastPlay: { event: "Error" },
+    linescore: {
+      ...game().linescore,
+      currentPlay: { result: { event: "Walk" } },
+    },
+  }).lastEvent,
+  "Error",
+  "Snapshot lastPlay wins over linescore-attached results",
+);
+check(
+  rules.evaluate({
+    ...game(),
+    linescore: {
+      ...game().linescore,
+      currentPlay: { result: { event: "Walk" } },
+    },
+  }).lastEvent,
+  "Walk",
+  "Synthetic linescore-attached result still works as a fallback",
+);
+check(
+  rules.evaluate(game()).lastPlay === undefined &&
+    rules.evaluate(game()).lastEvent === null,
+  true,
+  "No play context stays null, never invented",
+);
+check(
+  rules.snapshotGame(game(), {
+    gameData: { status: game().status },
+    liveData: { linescore: game().linescore },
+  }).lastPlay,
+  null,
+  "A feed without plays leaves lastPlay null",
+);
+
+// Cross-page quiet window: only OTHER observers suppress; this page's own
+// earlier episode never silences a confirmed exit + reload.
+const quietEntry = (observer) => ({
+  id: `123:9:${observer}`,
+  gamePk: 123,
+  inning: 9,
+  observedAt: 1_000_000,
+  observer,
+});
+check(
+  rules.recentSharedAlert([quietEntry("strip")], 123, 9, 1_050_000, 90000, "monitor"),
+  true,
+  "Another page's recent alert suppresses this page's chime",
+);
+check(
+  rules.recentSharedAlert([quietEntry("monitor")], 123, 9, 1_050_000, 90000, "monitor"),
+  false,
+  "This page's own earlier alert never suppresses its reload",
+);
+check(
+  rules.recentSharedAlert([quietEntry("strip")], 123, 9, 1_050_000, 90000, "strip"),
+  false,
+  "Matching observer is recognized in either direction",
+);
+check(
+  rules.recentSharedAlert([quietEntry(undefined)], 123, 9, 1_050_000, 90000, "monitor"),
+  true,
+  "Legacy entries without an observer still suppress",
+);
+check(
+  rules.recentSharedAlert([quietEntry("strip")], 123, 10, 1_050_000, 90000, "monitor"),
+  false,
+  "A new inning is never suppressed, own or shared",
+);
+
 check(
   rules.scheduleDates(new Date("2026-09-29T02:00:00Z")),
   ["2026-09-28", "2026-09-27"],
@@ -377,11 +475,18 @@ for (const field of [
   "outs",
   "runs",
   "offense",
+  "defense",
   "first",
   "second",
   "third",
   "id",
   "fullName",
+  "balls",
+  "strikes",
+  "batter",
+  "pitcher",
+  "plays",
+  "currentPlay",
 ]) {
   check(
     new URL(requested).searchParams.get("fields").split(",").includes(field),
