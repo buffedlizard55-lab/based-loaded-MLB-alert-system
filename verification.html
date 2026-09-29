@@ -655,7 +655,7 @@
             <strong>Live end-to-end proof is still pending.</strong> The rule
             engine is covered by 11,765 deterministic checks, the monitor by 99, the watcher by 85,
             the strip by 160, the always-on watcher by 85, its deployment recipes by
-            107 and the static site by 289 checks (counts as of
+            107 and the static site by 294 checks (counts as of
             2026-09-29), and the published copy of this site is verified by
             <code>tools/deployed-site-test.mjs</code> on every merge and
             nightly, but the honest next acceptance test is a real tied game
@@ -671,15 +671,17 @@
             smoke workflow.
           </li>
           <li>
-            <strong>Recommended next work:</strong> (1) <em>host and schedule</em>
-            <code>tools/watcher.mjs</code> (systemd, Docker or a scheduler) and add
-            browser-grade Web Push on top of it — the watcher itself shipped, running
-            it somewhere is a deployment decision; (2) a cross-device store for alert
-            history, which the watcher's JSONL log is the natural beginning of;
-            (3) installable PWA with vibration; (4) wider alert context (due-up
-            hitters, pitcher line) only after verifying the extra fields against a live
-            payload. Exported history and the official per-alert citation link are
-            done — see the log below.
+            <strong>Recommended next work:</strong> (1) browser-grade Web Push
+            (VAPID + a service worker) on top of the watcher — hosting recipes now
+            ship in <code>deploy/</code> with
+            <a href="docs/watcher-deployment.md">a deployment guide</a>, so what is
+            left is the push protocol itself, not the plumbing; (2) a cross-device
+            store for alert history, which the watcher's JSONL log is the natural
+            beginning of; (3) installable PWA with vibration; (4) wider alert context
+            (due-up hitters, pitcher line) only after verifying the extra fields
+            against a live payload. Done already, and listed here so the list stays
+            honest: the always-on watcher, its deployment recipes, exported history
+            and the official per-alert citation link — see the log below.
           </li>
         </ul>
         <div class="doc-sub">
@@ -723,7 +725,7 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              289 checks: every internal link target on every page exists, no
+              294 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still

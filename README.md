@@ -203,7 +203,7 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 5. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
-   plus 99 monitor, 160 strip, 85 watcher, 107 deployment and 289 site checks, and a published-site check verifies the
+   plus 99 monitor, 160 strip, 85 watcher, 107 deployment and 294 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment — the next live tied bottom-9+ game is
    the real acceptance test.
