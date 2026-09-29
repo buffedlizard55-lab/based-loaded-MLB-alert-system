@@ -318,6 +318,30 @@ try {
   check('schedule hydrate=review fetched', false, err.message);
 }
 
+/* watcher discovery contract (tools/watcher.mjs → scheduleUrl): the BARE
+ * schedule response carries no linescore at all (verified against the live
+ * API 2026-09-29), and the watcher's scanTarget reads
+ * linescore.currentInning to decide which games are late. The watcher only
+ * ever sees the late innings if hydrate=linescore keeps returning this field
+ * for live games — so that is exactly what this guard requires. */
+console.log('\n== schedule hydrate=linescore (watcher discovery) ==');
+try {
+  const sched = await getJSON(`${V1}/schedule?sportId=1&date=${date}&hydrate=linescore`);
+  const list = sched.dates && sched.dates[0] ? sched.dates[0].games : [];
+  const live = list.filter((g) => g.status && g.status.abstractGameState === 'Live');
+  const bad = live.filter((g) => !Number.isInteger(g.linescore && g.linescore.currentInning));
+  if (live.length)
+    check('every live game carries linescore.currentInning for the watcher', bad.length === 0,
+      bad.length
+        ? `${bad.length} of ${live.length} live game(s) missing linescore.currentInning: ` +
+          bad.slice(0, 3).map((g) => String(g.gamePk)).join(', ')
+        : `${live.length} live game(s)`);
+  else
+    console.log('  (no live games on this slate — skipped: watcher discovery hydration)');
+} catch (err) {
+  check('schedule hydrate=linescore fetched', false, err.message);
+}
+
 /* challenge counters (replay feed challenges-remaining tracker, 2026-08-28):
  * MLB.getChallengeCounts() sends exactly this fields-projected feed/live URL.
  * gameData.review (manager counters) must always be present; absChallenges is

@@ -665,7 +665,7 @@
           <li>
             <strong>Live end-to-end proof is still pending.</strong> The rule
             engine is covered by 11,772 deterministic checks, the monitor by 99,
-            the strip by 160, the always-on watcher by 159, its deployment recipes
+            the strip by 160, the always-on watcher by 173, its deployment recipes
             by 112, the Web Push implementation by 130 (the RFC 8291 and RFC 8292
             test vectors, intermediate values included), the phone-alerts panel by
             74 and the static site by 347 checks (counts as of 2026-09-29), and the
@@ -719,12 +719,17 @@
               than assumed.
             </li>
             <li>
-              Always-on watcher: <code>node tools/watcher-test.mjs</code> — 159
+              Always-on watcher: <code>node tools/watcher-test.mjs</code> — 173
               checks with a stubbed network and clock: what must and must not
               alert, de-duplication and re-arming, a delayed game, a failed
               schedule or snapshot, overnight carryovers, bounded concurrency,
               the log record, and every push channel including its failures —
-              Web Push included, down to decrypting the bytes it posts.
+              Web Push included, down to decrypting the bytes it posts. The
+              stubbed schedule answers with the slim shape of the real endpoint
+              (verified live 2026-09-29: no linescore without
+              <code>hydrate=linescore</code>), and the suite pins the discovery
+              URL that carries that hydration, the fast/slow cycle pacing, the
+              cached-slate fast path and the stale-state prune.
             </li>
             <li>
               Monitor controller: <code>node tools/bases-loaded-monitor-test.mjs</code>
@@ -798,10 +803,11 @@
               delivers through a webhook or ntfy when configured. It reports a
               failed channel with its reason — never as delivered — and it never
               guesses from play text or event names. Covered by
-              <code>tools/watcher-test.mjs</code> (159 checks) in CI, including a
+              <code>tools/watcher-test.mjs</code> (173 checks) in CI, including a
               full encrypt → decrypt round trip of the bytes it posts for a
               notification, the capped retry/backoff for transient push failures,
-              and the <code>--doctor</code> readiness report.
+              the discovery-URL contract against the real endpoint shape, and
+              the <code>--doctor</code> readiness report.
               <strong>Hosting it is a recipe now, not a research project:</strong>
               <code>deploy/</code> ships a hardened systemd unit, a Dockerfile and
               compose file (unprivileged user, read-only root, volume-backed state)

@@ -508,9 +508,11 @@ export async function doctor(config, { fetchImpl = fetch } = {}) {
   const lines = [];
   const add = (ok, label, detail) => lines.push({ ok, label, detail });
 
-  // 1. The official upstream, with today's (Eastern) slate as the proof.
+  // 1. The official upstream, proved with the very URL the watch depends on:
+  // the hydrated discovery schedule. If that answer stops carrying readable
+  // games, no situation will ever be seen — so that is what doctor checks.
   try {
-    const slate = await fetchImpl(`${V1}/schedule?sportId=1&date=${isoDay(0)}`);
+    const slate = await fetchImpl(scheduleUrl(isoDay(0)));
     const games = slate?.dates?.[0]?.games;
     if (!Array.isArray(games)) add(false, "upstream", "answered but not with a readable slate");
     else add(true, "upstream", `statsapi.mlb.com answered · ${games.length} game(s) on ${isoDay(0)}`);
@@ -591,10 +593,31 @@ const isoDay = (offset = 0) =>
   });
 
 /**
+ * The discovery URL the watcher sends. `hydrate=linescore` is load-bearing,
+ * not decoration: verified against the live StatsAPI on 2026-09-29, the BARE
+ * `/schedule` response carries status and score but NO `linescore` at all,
+ * and `scanTarget` reads `linescore.currentInning` to decide which games are
+ * late. Without the hydration a cold watcher can never target a late game
+ * and therefore never alerts — that is exactly what this project's 2026-09-29
+ * session found when the stubbed tests were compared with the real endpoint.
+ * `hydrate=linescore` alone keeps the payload small (no probable pitchers,
+ * decisions or review data) and was verified to return `currentInning` for
+ * live games while leaving `teams.away/home.team.name` intact for alert text.
+ */
+export const scheduleUrl = (date) =>
+  `${V1}/schedule?sportId=1&date=${date}&hydrate=linescore`;
+
+/**
  * One discovery + snapshot pass. Everything external is injected, so the
  * behaviour is deterministic in `tools/watcher-test.mjs` and identical in
  * production. Returns a summary; never throws on upstream trouble (a watcher
  * that dies on a bad response stops watching).
+ *
+ * `discovered` carries the previous cycle's slate (a Map keyed by gamePk).
+ * When it is present, this cycle snapshots it again without re-fetching the
+ * schedule — the same split the pages use between schedule discovery (slow)
+ * and late-inning snapshots (fast). A failed schedule fetch therefore never
+ * empties the watch: the caller simply keeps passing its cached slate.
  */
 export async function runCycle({
   state = { states: {} },
@@ -603,12 +626,14 @@ export async function runCycle({
   now = Date.now(),
   dates = [isoDay(0), isoDay(-1)],
   workerLimit = MAX_WORKERS,
+  discovered = null,
 }) {
   const summary = {
     at: now,
     dates,
     games: 0,
     targets: 0,
+    late: false,
     alerts: [],
     deliveries: [],
     scheduleError: "",
@@ -616,28 +641,36 @@ export async function runCycle({
     workers: 0,
   };
 
-  let slates;
-  try {
-    slates = await Promise.all(dates.map((date) => fetchJson(`${V1}/schedule?sportId=1&date=${date}`)));
-  } catch (error) {
-    summary.scheduleError = String(error?.message || error);
-    return summary;
-  }
-
-  const games = new Map();
-  slates.forEach((slate, index) => {
-    for (const game of (slate?.dates?.[0]?.games) || []) {
-      // Today's whole slate, plus live games carried over from yesterday —
-      // the same rule the monitor page uses.
-      if (index === 0 || game.status?.abstractGameState === "Live") games.set(game.gamePk, game);
+  let games = discovered instanceof Map ? discovered : null;
+  if (!games) {
+    let slates;
+    try {
+      slates = await Promise.all(dates.map((date) => fetchJson(scheduleUrl(date))));
+    } catch (error) {
+      summary.scheduleError = String(error?.message || error);
+      return summary;
     }
-  });
+    games = new Map();
+    slates.forEach((slate, index) => {
+      for (const game of (slate?.dates?.[0]?.games) || []) {
+        // Today's whole slate, plus live games carried over from yesterday —
+        // the same rule the monitor page uses.
+        if (index === 0 || game.status?.abstractGameState === "Live") games.set(game.gamePk, game);
+      }
+    });
+    summary.discoveredAt = now;
+  }
   summary.games = games.size;
+  summary.slate = games;
 
   const targets = [...games.values()].filter((game) =>
     rules.scanTarget(game, state.states[game.gamePk]),
   );
   summary.targets = targets.length;
+  // "Late" means something deserves the fast cadence before the next cycle —
+  // exactly the scanTarget rule: a live game in inning 9+, or a watch already
+  // active. The main loop switches between pollMs and lateMs on this flag.
+  summary.late = targets.length > 0;
 
   // Bounded concurrency, like the pages: at most four requests in flight.
   let cursor = 0;
@@ -690,7 +723,24 @@ export async function runCycle({
       });
   }
 
+  // A game that left the slate (yesterday's final no longer live, or the
+  // calendar turned) cannot alert again; drop its episode so the state file
+  // stays the size of the slate instead of growing all season.
+  for (const key of Object.keys(state.states))
+    if (!games.has(Number(key))) delete state.states[key];
+
   return summary;
+}
+
+/**
+ * How long to sleep before the next cycle. While anything is late the loop
+ * runs at the late cadence (default 2 s — the situation can change with the
+ * next pitch); otherwise only discovery pacing is needed. The flag comes from
+ * the cycle that just ran, so a situation cannot sit undiscovered for longer
+ * than one slow interval and then be polled slowly while it lasts.
+ */
+export function cycleDelayMs(summary, config) {
+  return summary?.late ? config.lateMs : config.pollMs;
 }
 
 /* ------------------------------------------------------------------ main - */
@@ -837,12 +887,39 @@ async function main() {
   process.on("SIGINT", () => stop("SIGINT"));
   process.on("SIGTERM", () => stop("SIGTERM"));
 
+  // Discovery is separate from snapshots, exactly as on the pages: the slate
+  // is refreshed at the slow cadence (and when the MLB calendar day rolls
+  // over), while a late cycle snapshots the cached slate again at the fast
+  // cadence without spending two more schedule requests.
+  let slate = null;
+  let slateKey = "";
+  let slateAt = 0;
   do {
-    const summary = await runCycle({ state, config, fetchJson });
+    const dates = [isoDay(0), isoDay(-1)];
+    const datesKey = dates.join();
+    if (datesKey !== slateKey) slate = null;
+    const now = Date.now();
+    const fresh = !slate || now - slateAt >= config.pollMs;
+    const summary = await runCycle({
+      state,
+      config,
+      fetchJson,
+      now,
+      dates,
+      discovered: fresh ? null : slate,
+    });
+    if (Number.isFinite(summary.discoveredAt)) {
+      slate = summary.slate;
+      slateKey = datesKey;
+      slateAt = summary.discoveredAt;
+    }
+    // A failed fresh discovery keeps the cached slate (slateAt unchanged, so
+    // the next cycle retries discovery) — the pages hold their slate for the
+    // same reason: an upstream blip must not empty the watch.
     report(summary, config);
     writeState(config.stateFile, state);
     if (config.once) break;
-    await new Promise((resolve) => setTimeout(resolve, config.pollMs));
+    await new Promise((resolve) => setTimeout(resolve, cycleDelayMs(summary, config)));
   } while (!stopping);
 }
 

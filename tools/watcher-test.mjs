@@ -37,6 +37,8 @@ const {
   listStoredSubscriptions,
   pruneInvalidSubscriptions,
   runCycle,
+  cycleDelayMs,
+  scheduleUrl,
 } = await import("./watcher.mjs");
 const { b64url, generateVapidKeys, readSubscriptions, writeSubscriptions } = await import("./webpush.mjs");
 
@@ -108,9 +110,30 @@ function stub(handler, { log = [] } = {}) {
   return { fetchJson, log, peak: () => maxInFlight };
 }
 
+/* The schedule side of this stub mirrors the endpoint contract verified live
+ * on 2026-09-29: the bare schedule carries NO linescore, and with the
+ * watcher's `hydrate=linescore` the linescore arrives slim (currentInning,
+ * half-inning, runs) — never the offense occupants, the count, or outs
+ * details the alert snapshot provides. Passing the full linescore through the
+ * schedule would let a broken discovery URL keep passing tests, which is
+ * exactly how the 2026-09-29 bug shipped: the stubs were richer than the
+ * real endpoint. */
+const scheduleShape = (game) => ({
+  gamePk: game.gamePk,
+  status: game.status,
+  teams: game.teams,
+  linescore: game.linescore
+    ? {
+        currentInning: game.linescore.currentInning,
+        inningState: game.linescore.inningState,
+        teams: game.linescore.teams,
+      }
+    : undefined,
+});
+
 const schedules = (games, extra = {}) => (url) =>
   url.includes("/schedule")
-    ? { dates: [{ games }] }
+    ? { dates: [{ games: games.map(scheduleShape) }] }
     : (() => {
         const pk = Number(url.match(/game\/(\d+)/)[1]);
         const found = [...games, ...(extra.extraGames || [])].find((g) => g.gamePk === pk);
@@ -172,6 +195,110 @@ check(
 check(first.alerts[0].halfInning, "bottom", "The record is a bottom-half observation");
 check(ALERT_FIELDS.includes("offense") && ALERT_FIELDS.includes("linescore"), true,
   "The watcher sends the same verified projection as the site");
+
+/* -------------------------------------- discovery contract (live-verified) -
+ * Verified against the real StatsAPI on 2026-09-29:
+ *   - the BARE /schedule response has status and score but no linescore;
+ *   - with hydrate=linescore the live games carry linescore.currentInning
+ *     and teams.*.team.name stays intact.
+ * scanTarget reads currentInning, so the hydration is load-bearing: without
+ * it a cold watcher targets nothing and never alerts (the bug this section
+ * now pins out of existence).
+ * ------------------------------------------------------------------------ */
+check(
+  scheduleUrl("2026-09-29"),
+  "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2026-09-29&hydrate=linescore",
+  "Discovery asks for the linescore hydration by URL",
+);
+{
+  const probe = stub(schedules([loaded]));
+  await runCycle({ config: quietConfig, fetchJson: probe.fetchJson });
+  const discovery = probe.log.filter((url) => url.includes("/schedule"));
+  check(discovery.length, 2, "Discovery asks for today and yesterday");
+  ok(
+    discovery.every((url) => url.includes("hydrate=linescore")),
+    "Every discovery request carries the linescore hydration",
+  );
+}
+{
+  // Cold start against the honest schedule shape: only currentInning arrives
+  // with the slate; everything else must come from the alert snapshot.
+  const cold = await runCycle({
+    config: quietConfig,
+    fetchJson: stub(schedules([loaded])).fetchJson,
+  });
+  check(cold.alerts.length, 1, "A cold watcher alerts from the real schedule shape");
+  check(cold.late, true, "A cold late cycle reports the fast-cadence flag");
+}
+
+/* ------------------------------------------------------- loop pacing ------- */
+check(
+  cycleDelayMs({ late: true }, defaults),
+  defaults.lateMs,
+  "A late cycle keeps the fast cadence",
+);
+check(
+  cycleDelayMs({ late: false }, defaults),
+  defaults.pollMs,
+  "A quiet cycle paces discovery",
+);
+check(cycleDelayMs(null, defaults), defaults.pollMs, "No summary paces discovery");
+
+/* ------------------------------------------------- cached discovery reuse -- */
+{
+  const slate = new Map([
+    [
+      loaded.gamePk,
+      {
+        gamePk: loaded.gamePk,
+        status: loaded.status,
+        teams: loaded.teams,
+        linescore: { currentInning: loaded.linescore.currentInning },
+      },
+    ],
+  ]);
+  // The schedule side of the stub must never be reached; the feed side still
+  // has to answer for the cached game.
+  const cached = stub(schedules([loaded]));
+  const summary = await runCycle({
+    config: quietConfig,
+    fetchJson: cached.fetchJson,
+    discovered: slate,
+  });
+  check(
+    cached.log.filter((url) => url.includes("/schedule")).length,
+    0,
+    "A cached cycle spends no schedule requests",
+  );
+  check(summary.alerts.length, 1, "A cached cycle still snapshots and alerts");
+  check(summary.late, true, "A cached late cycle keeps the fast cadence");
+  check(
+    Number.isFinite(summary.discoveredAt),
+    false,
+    "A cached cycle reports no fresh discovery",
+  );
+}
+
+/* ------------------------------------------------------- stale-state prune - */
+{
+  const pruneState = { states: {} };
+  await runCycle({
+    state: pruneState,
+    config: quietConfig,
+    fetchJson: stub(schedules([loaded])).fetchJson,
+  });
+  ok(pruneState.states[loaded.gamePk], "An observed game keeps its episode state");
+  await runCycle({
+    state: pruneState,
+    config: quietConfig,
+    fetchJson: stub(schedules([])).fetchJson,
+  });
+  check(
+    pruneState.states[loaded.gamePk],
+    undefined,
+    "A game that left the slate drops its episode state",
+  );
+}
 
 /* --------------------------------------------------- what must NOT alert -- */
 
@@ -914,7 +1041,7 @@ check(
 
 check(
   Object.keys(first).sort(),
-  ["alerts", "at", "dates", "deliveries", "games", "scheduleError", "snapshotErrors", "targets", "workers"],
+  ["alerts", "at", "dates", "deliveries", "discoveredAt", "games", "late", "scheduleError", "slate", "snapshotErrors", "targets", "workers"],
   "The cycle summary reports exactly the health fields the CLI prints",
 );
 check(first.workers, 1, "One worker is used for one target");
