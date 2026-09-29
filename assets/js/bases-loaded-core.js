@@ -1,5 +1,11 @@
 /* Pure rules shared by the browser and deterministic tests. No event-name whitelist.
  * Enhanced: tracks count, batter/pitcher, tension level, and base-loading path.
+ *
+ * Shared by two front ends, which is why the polling decisions live here too:
+ *   - bases-loaded.js       — the full monitor page (index.html / bases-loaded.html)
+ *   - bases-loaded-strip.js — the site-wide strip on scoreboard / replay feed / game
+ * Keeping one implementation means the strip and the dashboard can never disagree
+ * about what counts as the situation or about which game to poll next.
  */
 "use strict";
 const BasesLoadedRules = (() => {
@@ -144,6 +150,78 @@ const BasesLoadedRules = (() => {
     };
   }
 
+  /**
+   * Which live game deserves its own live snapshot this cycle.
+   *
+   * Inning 9+ covers every case we alert on: the changeover out of a tied top
+   * half (`Middle`, or a third out still reported as `Top`) and every later
+   * bottom half without an upper bound. A game the monitor already has on watch
+   * stays a target even if the published inning momentarily regresses, so a
+   * feed hiccup cannot silently drop an active situation. Early-inning games
+   * are never polled individually at all.
+   */
+  function scanTarget(game, state) {
+    if (game?.status?.abstractGameState !== "Live") return false;
+    return number(game?.linescore?.currentInning) >= 9 || state?.active === true;
+  }
+
+  /**
+   * Loop pacing, in milliseconds, shared by both front ends.
+   *
+   * Nothing is late yet: we only pay for schedule discovery (`slow`). As soon as
+   * any live game reaches inning 9 (or a watch is already active) the loop
+   * tightens to `fast`, because a tied, loaded situation can appear on the very
+   * next pitch. Accepts a Map (the controllers keep games in one) or an array.
+   */
+  function pollCadence(games, states, { fast = 5000, slow = 30000 } = {}) {
+    const list =
+      games instanceof Map
+        ? [...games.values()]
+        : Array.isArray(games)
+          ? games
+          : [];
+    const late = list.some(
+      (game) => scanTarget(game, states?.[game.gamePk]) === true,
+    );
+    return late ? fast : slow;
+  }
+
+  /**
+   * Cross-page quiet window.
+   *
+   * The monitor page and the site-wide strip share one alert log, so a
+   * continuous situation can be observed twice in the same browser (two tabs,
+   * or a page switch). If this exact game + inning was already logged inside
+   * the quiet window, the second observation is recorded but must not beep or
+   * raise another desktop notice. Same game in a *new* inning is a new
+   * situation and is never suppressed.
+   */
+  function recentSharedAlert(
+    history,
+    gamePk,
+    inning,
+    now = Date.now(),
+    windowMs = 90000,
+  ) {
+    const target = number(inning);
+    if (!Array.isArray(history) || target === null) return false;
+    return history.some((entry) => {
+      if (!entry || entry.gamePk !== gamePk || entry.inning !== target)
+        return false;
+      const age = now - entry.observedAt;
+      return Number.isFinite(entry.observedAt) && age >= 0 && age < windowMs;
+    });
+  }
+
+  /** "2nd & 3rd" / "Loaded" / "Bases empty" — labels only, never invented occupancy. */
+  function occupancyLabel(bases, loadedWord = "Loaded") {
+    const order = ["1st", "2nd", "3rd"];
+    const occupied = order.filter((_, index) => !!bases?.[index]);
+    if (!occupied.length) return "Bases empty";
+    if (occupied.length === 3) return loadedWord;
+    return occupied.join(" & ");
+  }
+
   function snapshotGame(scheduleGame, feed) {
     // Never fall back to stale schedule bases/status if the live payload is incomplete.
     if (
@@ -220,7 +298,19 @@ const BasesLoadedRules = (() => {
     ];
   }
 
-  return { evaluate, observe, snapshotGame, scheduleDates, isLive, calculateTension, tensionLabel };
+  return {
+    evaluate,
+    observe,
+    snapshotGame,
+    scheduleDates,
+    isLive,
+    calculateTension,
+    tensionLabel,
+    scanTarget,
+    pollCadence,
+    recentSharedAlert,
+    occupancyLabel,
+  };
 })();
 if (typeof module !== "undefined" && module.exports)
   module.exports = BasesLoadedRules;

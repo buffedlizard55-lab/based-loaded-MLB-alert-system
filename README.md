@@ -9,7 +9,10 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 - **Route-independent:** reads official first/second/third base occupants, not event descriptions. Walks, hits, errors, interference, automatic extra-inning runners and official corrections all use the same rule.
 - **Alerts:** highlighted live cards, optional sound and opt-in desktop notifications. A continuous loaded situation alerts once; a confirmed exit and reload can alert again, even in the same inning.
 - **History:** immutable score, outs and runner snapshots, retained in this browser for seven days (maximum 200 entries). Refreshing the page restores history and deduplication state. Not shared across devices or a complete historical replay.
+- **Site-wide strip:** the scoreboard, replay feed (`reviews.html`) and game view mount a slim "Loaded Late" watcher, so the same one situation is tracked from whichever page of this copy you are on. The strip reuses the same rules engine, the same alert log and the same notification opt-in as the dashboard; a continuous situation never alerts twice just because you changed pages. The monitor page itself does not load it, so no page ever runs two watchers.
 - **Original pages preserved:** `scoreboard.html`, `game.html`, and `reviews.html`. Their legacy features remain separate from this narrow monitor.
+
+**New here?** [docs/loaded-late-quickstart.md](docs/loaded-late-quickstart.md) is the short version: which page to open, how to arm sound and notifications, what triggers an alert, and what the limits are.
 
 ## Run / preview
 
@@ -19,6 +22,8 @@ No build or dependencies are required:
 node server.mjs
 # http://localhost:8000/ — live monitor
 # http://localhost:8000/?demo=1 — guided, offline synthetic scenarios
+# http://localhost:8000/reviews.html — replay feed + the site-wide strip
+# http://localhost:8000/reviews.html?ll-demo=1 — strip demo, no live data
 # http://localhost:8000/scoreboard.html — original scoreboard
 ```
 
@@ -39,13 +44,14 @@ See [the detection rules, coverage and limitations](docs/bases-loaded-alerts.md)
 ```bash
 node tools/bases-loaded-test.mjs
 node tools/bases-loaded-monitor-test.mjs
+node tools/bases-loaded-strip-test.mjs
 ```
 
-These deterministic tests need neither external packages nor live MLB games. The guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, and bottom 14. Demo data never enters live history.
+These deterministic tests need neither external packages nor live MLB games. The guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, and bottom 14. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. Demo data never enters live history.
 
 ## Deploy this copy
 
-Serve this repository root on GitHub Pages or another static host. This checkout does **not** change the original `MLB-Live-PBP` deployment; publishing this copy requires configuring/deploying this repository. See the existing deployment section below for hosting options. API usage remains subject to MLB's terms; this is an unofficial, personal-use project.
+Serve this repository root on a static host — there is no build step and no server requirement. This checkout does **not** change the original `MLB-Live-PBP` deployment; publishing this copy requires turning Pages on for this repository once (Settings → Pages → *Deploy from a branch* → `main` / `/ (root)`), after which every push to `main` republishes the site at `https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/`. A ready-to-use Actions workflow is kept at [`docs/workflows/pages.yml`](docs/workflows/pages.yml) if you prefer the Actions deployment path instead; it has to be copied to `.github/workflows/` because the file lives outside that folder in this checkout. API usage remains subject to MLB's terms; this is an unofficial, personal-use project.
 
 ---
 

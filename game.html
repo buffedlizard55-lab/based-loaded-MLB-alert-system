@@ -19,6 +19,7 @@
   <link rel="dns-prefetch" href="https://www.mlbstatic.com">
   <link rel="dns-prefetch" href="https://img.mlbstatic.com">
   <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/bases-loaded-strip.css">
 </head>
 <body class="page-game">
   <header class="topbar topbar-game">
@@ -93,5 +94,10 @@
   <script src="assets/js/feed-log.js"></script>
   <script src="assets/js/props.js"></script>
   <script src="assets/js/game.js"></script>
+  <!-- Site-wide "Loaded Late" watcher: tied game, bases loaded, bottom 9+
+       on every page of this copy. Shares the rules engine, the alert log
+       and the notification preference with the full monitor page. -->
+  <script src="assets/js/bases-loaded-core.js"></script>
+  <script src="assets/js/bases-loaded-strip.js"></script>
 </body>
 </html>
