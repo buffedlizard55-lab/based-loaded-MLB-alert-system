@@ -219,7 +219,7 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    The client self-limits and degrades visibly instead of guessing.
 6. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
    plus 99 monitor, 160 strip, 120 watcher, 112 deployment, 130 Web Push, 74 phone-alert and
-   343 site checks, and a published-site check verifies the
+   345 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment, and no alert has yet arrived on a real
    phone through a real push service — the next live tied bottom-9+ game is the real
@@ -488,7 +488,7 @@ line, so what was checked, what was corrected and what is still open is written 
   entry output is `readonly`. The rule that actually matters — nothing has to be typed for a
   situation to be caught — is still enforced.
 - Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · watcher 120 ·
-  deploy 112 · Web Push 130 · phone alerts 74 · site 343 · published-site 33 (local dry run
+  deploy 112 · Web Push 130 · phone alerts 74 · site 345 · published-site 33 (local dry run
   against `node server.mjs`). CI runs the two new suites (vectors and panel) in the
   deterministic job.
 

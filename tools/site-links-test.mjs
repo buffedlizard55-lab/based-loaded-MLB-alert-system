@@ -530,6 +530,23 @@ check(
   readmeCount,
   "The README and the sources page quote the same suite size",
 );
+
+// The same rule applies to the other suites by name: a page that says "the
+// watcher suite is 85 checks" in one place and 120 in another is quoting two
+// "official" numbers, which is exactly how a reader stops trusting the page.
+{
+  // Every place the sources page sizes the watcher suite — "…— 120 checks" and
+  // "…(120 checks)" — pooled, then compared to each other.
+  const quoted = [...read("verification.html").matchAll(/watcher-test\.mjs<\/code>[^\d]{0,12}([\d,]+)/g)].map(
+    (match) => Number(match[1].replace(/,/g, "")),
+  );
+  ok(quoted.length >= 2, `The sources page sizes the watcher suite where expected (${quoted.join(", ")})`);
+  check(
+    new Set(quoted).size,
+    1,
+    `The sources page quotes one watcher-suite size throughout (${quoted.join(", ")})`,
+  );
+}
 if (readmeCount !== null && readmeCount !== checks)
   console.log(
     `  note: the docs quote ${readmeCount} site checks; this run performs ${checks}.`,
