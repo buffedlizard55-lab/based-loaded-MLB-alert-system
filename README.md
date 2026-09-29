@@ -200,7 +200,7 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 5. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
-   plus 99 monitor, 160 strip, 85 watcher and 276 site checks, and a published-site check verifies the
+   plus 99 monitor, 160 strip, 85 watcher and 278 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment — the next live tied bottom-9+ game is
    the real acceptance test.
@@ -386,7 +386,7 @@ line, so what was checked, what was corrected and what is still open is written 
   Honest remainder: **hosting and scheduling** (systemd, Docker, a spare machine) and
   browser-grade Web Push (VAPID + service worker) are still not provided.
 - Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · watcher
-  82 · site 276 · published-site 30 (local dry run against `node server.mjs`).
+  85 · site 278 · published-site 30 (local dry run against `node server.mjs`).
 
 ## Original MLB Live PBP documentation
 
