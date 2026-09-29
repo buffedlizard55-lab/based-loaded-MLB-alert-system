@@ -10,3 +10,7 @@ node_modules/
 # Always-on watcher runtime state (local to each deployment, never shared)
 data/watcher-state.json
 data/watcher-alerts.jsonl
+# Web Push secrets: the VAPID signing key and the subscription store (capability
+# URLs — whoever holds one can notify that device). Both stay on the watcher host.
+data/vapid-keys.json
+data/push-subscriptions.json

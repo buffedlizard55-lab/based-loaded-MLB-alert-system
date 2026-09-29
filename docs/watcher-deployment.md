@@ -100,11 +100,79 @@ a restart — or the next cron run — never re-alerts a situation you have alre
 | --- | --- |
 | stdout | `journalctl -u loaded-late-watcher -f` · `docker compose logs -f` · the cron log |
 | JSONL log | `data/watcher-alerts.jsonl` (`WATCHER_LOG_DIR`), one JSON record per line |
-| phone push | `WATCHER_NTFY_TOPIC` (ntfy app) or `WATCHER_WEBHOOK_URL` (any HTTPS endpoint accepting `{"text", "alert"}`) |
+| phone push | `WATCHER_NTFY_TOPIC` (ntfy app), `WATCHER_WEBHOOK_URL` (any HTTPS endpoint accepting `{"text", "alert"}`), or Web Push |
+| Web Push | a notification on a device that subscribed from the site's **Phone alerts** panel — no third-party app, and the push service only ever holds ciphertext |
 
 Each record and each push carries the exact official snapshot URL the alert was read from, plus
 the official `mlb.com/gameday/<gamePk>` page. Nothing is ever reported as delivered when it was
 not: a failed channel is logged with its reason.
+
+## Web Push — notifications on a phone, with the tab closed
+
+This is the only channel where your alert content never passes through a third party in the clear.
+The watcher encrypts each notification to a key that exists only in the subscribed browser
+(RFC 8291) and signs the request with its own VAPID key (RFC 8292); both are implemented in
+[`tools/webpush.mjs`](../tools/webpush.mjs) with no dependencies and are checked against the RFCs'
+published test vectors by `tools/webpush-test.mjs`.
+
+Three steps, once:
+
+```bash
+# 1. On the machine that runs the watcher: create the VAPID key pair (0600, never committed).
+node tools/webpush.mjs --generate --write     # → $WATCHER_LOG_DIR/vapid-keys.json
+node tools/webpush.mjs --public               # → the public key to paste in step 2
+
+# 2. Put that public key in assets/js/vapid-config.js (it is a public key — safe to publish)
+#    and push/commit it, so the site can subscribe devices with it.
+
+# 3. Open the site's "Phone alerts" panel on the phone, press "Subscribe this device",
+#    and copy the entry it shows into the watcher's subscription store:
+#      $WATCHER_LOG_DIR/push-subscriptions.json
+#      {"subscriptions": [ <the entry> ]}
+```
+
+Then configure the watcher and restart it:
+
+```ini
+WATCHER_VAPID_KEYS=/etc/loaded-late/vapid-keys.json
+WATCHER_PUSH_SUBSCRIPTIONS=/etc/loaded-late/push-subscriptions.json
+# optional, recommended: push services use this to contact you if your traffic misbehaves
+WATCHER_VAPID_SUBJECT=mailto:you@example.com
+```
+
+Setting only one of the two paths is **reported at startup** (`WARNING: WATCHER_PUSH_SUBSCRIPTIONS is
+set but WATCHER_VAPID_KEYS is not …`) instead of silently behaving like a channel with nothing to
+say. The startup line lists the channel and how many subscriptions the store holds.
+
+What to expect:
+
+- **The site cannot reach the watcher.** GitHub Pages serves static files; the watcher runs on your
+  machine. That is why step 3 is a copy/paste — the panel never pretends otherwise, and
+  `assets/js/push-alerts.js` contains no `fetch` call at all.
+- **Several devices** are several entries in the same `subscriptions` array, each with its own
+  `label` (which is what the watcher log names when it reports delivery per device).
+- **A subscription the push service reports as gone** (HTTP 404/410) is dropped from the store and
+  the log says `dropped N gone subscription(s)`. Dead endpoints do not accumulate silently.
+- **Delivery is per device and honest.** The log says `delivered → push(phone): HTTP 201 · N bytes`
+  or `FAILED → push(phone): HTTP 410 …`, never a blanket "sent". The notification itself is JSON
+  (`title`, `body`, `url`, `tag`): the title names the situation and inning, `body` is the same
+  evidence line the log and the other channels carry, and tapping it opens the official Gameday
+  page for that game. Both files the channel needs — `WATCHER_VAPID_KEYS` and
+  `WATCHER_PUSH_SUBSCRIPTIONS` — are written `0600`: the key is a signing key, and a subscription
+  endpoint is a capability URL.
+- **TTL is 30 minutes** (`PUSH_TTL_SECONDS` in the watcher). The text carries the observation
+  timestamp and a link to the live game, so a slightly late alert is still honest; a very late one
+  is not, so a device that has been offline for longer than that gets nothing.
+- **Notifications collapse per game** (`Topic: loaded-<gamePk>`): a newer alert about the same game
+  replaces one still waiting instead of stacking up behind it.
+- **`sw.js` intentionally caches nothing.** It exists to show the notification and open the game
+  page when tapped; a stale copy of a live-game page would be worse than no page.
+
+Honest limits of this channel: a subscription is a capability URL — anyone who holds it can send
+notifications to that device — so keep the store file (and the key file) readable only by the user
+running the watcher, and out of version control. Web Push also depends on the browser's push
+service being reachable (Chrome/Firefox/Edge use Google/Mozilla infrastructure; Safari uses Apple's),
+so it is not a fully self-hosted path.
 
 ## Knowing it is working — and what that does not prove
 

@@ -172,13 +172,81 @@ for (const file of new Set(documented))
 
 /* --------------------------------- 6. the alert surfaces have no inputs */
 
+// No page may take typed input into the alert pipeline: the whole point is that
+// nothing has to be entered for a situation to be caught. The phone-alerts panel
+// is the single exception, and it is fenced in by its own checks below: its device
+// name is a note on a subscription, it cannot reach the rules engine, and its
+// only other field is a read-only output.
 for (const page of ["index.html", "bases-loaded.html", "verification.html"]) {
   const html = read(page);
-  ok(
-    !/<input|<textarea|<form|contenteditable/i.test(html),
-    `${page} has no manual data entry`,
+  ok(!/<form|contenteditable/i.test(html), `${page} has no manual data entry form`);
+  const editable = [...html.matchAll(/<input[^>]*>|<textarea[^>]*>/gi)]
+    .map((match) => match[0])
+    .filter((tag) => !/readonly/i.test(tag));
+  const outsidePanel = editable.filter(
+    (tag) => !/id="phone-alerts-label"/.test(tag) || !html.includes('id="phone-alerts"'),
+  );
+  check(
+    outsidePanel,
+    [],
+    `${page}'s only editable control is the phone-alert device name`,
   );
 }
+// …and that one control really cannot influence a single rule: the monitor code
+// does not look at it, and the push panel is the only thing that reads it.
+for (const file of ["assets/js/bases-loaded.js", "assets/js/bases-loaded-core.js", "assets/js/bases-loaded-strip.js"]) {
+  ok(
+    !read(file).includes("phone-alerts"),
+    `${file} never reads the phone-alerts panel (alerts stay input-free)`,
+  );
+}
+check(
+  read("assets/js/push-alerts.js").includes("phone-alerts-label") &&
+    read("assets/js/push-alerts.js").includes("navigator.clipboard"),
+  true,
+  "The push panel is the only reader of the device name, and it is only copied out",
+);
+
+/* ------------------------------ 6b. phone alerts (Web Push) are wired up --- */
+
+const indexHtml = read("index.html");
+for (const script of ["assets/js/vapid-config.js", "assets/js/push-alerts.js"]) {
+  ok(indexHtml.includes(`<script src="${script}"></script>`), `index.html loads ${script}`);
+}
+ok(read("sw.js").includes('addEventListener("push"'), "The service worker handles push events");
+ok(read("sw.js").includes('addEventListener("notificationclick"'), "…and a tapped notification");
+ok(read("sw.js").includes("showNotification"), "…by actually showing a notification");
+ok(
+  !read("sw.js").includes('addEventListener("fetch"') && !/\bcaches\./.test(read("sw.js")),
+  "The service worker caches nothing (a stale page about a live game would be a lie)",
+);
+ok(
+  !/\bfetch\(/.test(read("assets/js/push-alerts.js")),
+  "The subscribe panel never calls the watcher: it hands the entry over by copy/paste",
+);
+ok(
+  /window\.LOADED_LATE_VAPID_PUBLIC_KEY = "";/.test(read("assets/js/vapid-config.js")),
+  "The repository ships with no VAPID public key configured (the panel says so until one is pasted)",
+);
+// Both monitor entrypoints are byte-identical (asserted by the rules suite), so
+// both carry the panel; the standalone pages deliberately do not, so the alert
+// surface stays in one place.
+for (const page of ["verification.html", "scoreboard.html", "reviews.html", "game.html"]) {
+  ok(!read(page).includes("push-alerts.js"), `${page} does not load the subscribe panel`);
+}
+for (const page of ["index.html", "bases-loaded.html"]) {
+  ok(read(page).includes('id="phone-alerts"'), `${page} carries the phone-alerts panel`);
+  ok(read(page).includes("window.LoadedLatePush.mount(document"), `${page} wires the panel up`);
+  ok(/WATCHER_PUSH_SUBSCRIPTIONS/.test(read(page)), `${page} names the watcher setting the entry goes into`);
+}
+for (const envVar of ["WATCHER_PUSH_SUBSCRIPTIONS", "WATCHER_VAPID_KEYS"]) {
+  ok(read("docs/watcher-deployment.md").includes(envVar), `The deployment guide documents ${envVar}`);
+  ok(read("deploy/loaded-late-watcher.env.example").includes(envVar), `The env template documents ${envVar}`);
+}
+ok(
+  read("tools/watcher.mjs").includes("./webpush.mjs"),
+  "The watcher really uses the Web Push implementation the docs describe",
+);
 // The inherited scoreboard / replay feed date pickers select which day is
 // displayed; they never feed the alert rules.
 for (const page of ["scoreboard.html", "reviews.html"]) {
@@ -357,9 +425,17 @@ ok(
     [/always-on server watcher\s+with Web Push/i, "the always-on watcher itself"],
   ])
     ok(!pattern.test(nextWork), `Next work no longer lists ${label}, which already shipped`);
+  // A tracked feature must not be advertised as outstanding once it ships. The
+  // list is allowed to mention it in its "done already" clause — that is the
+  // point of the clause — so the check targets the words that promise future
+  // work, not the words that name the feature.
   ok(
-    /web push/i.test(nextWork),
-    "Next work still leads with the genuinely outstanding item (Web Push)",
+    !/still not implemented|not yet implemented|remains outstanding|is still open/i.test(nextWork),
+    "Next work does not describe shipped work as outstanding",
+  );
+  ok(
+    /prove it live/i.test(nextWork),
+    "Next work leads with the live end-to-end proof, the only acceptance test left",
   );
 }
 ok(
@@ -374,6 +450,24 @@ ok(
   read(".gitignore").includes("watcher-state.json"),
   "Each deployment's watcher state stays out of version control",
 );
+for (const secret of ["data/vapid-keys.json", "data/push-subscriptions.json"]) {
+  ok(
+    read(".gitignore").split("\n").some((line) => line.trim() === secret),
+    `${secret} is gitignored (a VAPID key and a subscription endpoint are secrets)`,
+  );
+}
+ok(
+  read("index.html").includes("if (window.LoadedLatePush) window.LoadedLatePush.mount(document"),
+  "The panel is mounted behind a guard, so a blocked script cannot break the monitor",
+);
+// Every element the panel reaches for must exist in the markup: an id rename
+// would otherwise leave a silently missing status line or a dead button.
+for (const id of new Set([...read("assets/js/push-alerts.js").matchAll(/byId\("([^"]+)"\)/g)].map((m) => m[1]))) {
+  ok(
+    read("index.html").includes(`id="${id}"`) && read("bases-loaded.html").includes(`id="${id}"`),
+    `Both entrypoints ship the ${id} element the panel wires`,
+  );
+}
 
 for (const asset of [
   "assets/js/api.js",

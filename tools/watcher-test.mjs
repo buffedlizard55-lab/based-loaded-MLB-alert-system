@@ -9,7 +9,10 @@
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { createDecipheriv, createECDH, createHmac, randomBytes } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 const rules = require("../assets/js/bases-loaded-core.js");
@@ -22,8 +25,13 @@ const {
   readState,
   writeState,
   appendAlert,
+  pushConfigProblem,
+  pushPayload,
+  pushTopic,
+  PUSH_TTL_SECONDS,
   runCycle,
 } = await import("./watcher.mjs");
+const { b64url, generateVapidKeys, readSubscriptions, writeSubscriptions } = await import("./webpush.mjs");
 
 let checks = 0;
 const check = (actual, expected, label) => {
@@ -461,6 +469,187 @@ const alertWithDeadChannels = await runCycle({
 check(alertWithDeadChannels.alerts.length, 1, "The alert survives a failing push channel");
 check(alertWithDeadChannels.deliveries[0].results[0].channel, "log",
   "The log write is attempted before the network channels");
+
+/* ------------------------------------------------------- web push channel - */
+
+check(
+  [pushConfigProblem({}), pushConfigProblem({ pushSubscriptions: "s", vapidKeysFile: "k" })],
+  ["", ""],
+  "Web Push is either fully configured or not configured at all",
+);
+ok(
+  pushConfigProblem({ pushSubscriptions: "s" }).includes("WATCHER_VAPID_KEYS"),
+  "A store without keys names the missing setting instead of silently doing nothing",
+);
+ok(
+  pushConfigProblem({ vapidKeysFile: "k" }).includes("WATCHER_PUSH_SUBSCRIPTIONS"),
+  "…and keys without a store names the store",
+);
+check(pushTopic({ gamePk: 900001 }), "loaded-900001", "The collapse key is per game");
+check(pushTopic({}), "loaded-late", "A game without a usable id falls back to a generic topic");
+{
+  const payload = JSON.parse(pushPayload({ inning: 12, gamePk: 824801, gameUrl: "https://www.mlb.com/gameday/824801" }, "text"));
+  check(payload.title, "BASES LOADED — BOT 12", "The notification title names the actual inning");
+  check(payload.tag, "loaded-824801", "…and collapses per game");
+  check(payload.url, "https://www.mlb.com/gameday/824801", "…and opens the official page");
+  const bare = JSON.parse(pushPayload({}, "text"));
+  check([bare.title, bare.gamePk, bare.url], ["BASES LOADED — tied, bottom 9+", null, ""],
+    "An alert missing its inning and game still produces an honest notification");
+}
+check(PUSH_TTL_SECONDS, 1800, "A push expires after half an hour (the text carries its own timestamp)");
+
+// A real receiver: a throwaway P-256 key pair plus a 16-octet auth secret, the
+// two values a browser hands over when it subscribes. The delivery below is
+// decrypted with the private half, which is the only way to prove the push a
+// phone would receive is the alert we think we sent.
+const receiver = createECDH("prime256v1");
+receiver.generateKeys();
+const receiverAuth = randomBytes(16);
+const pushDirectory = mkdtempSync(join(tmpdir(), "loaded-late-push-"));
+const storeFile = join(pushDirectory, "push-subscriptions.json");
+const keysFile = join(pushDirectory, "vapid-keys.json");
+const vapid = generateVapidKeys();
+writeFileSync(keysFile, `${JSON.stringify(vapid)}\n`);
+writeFileSync(
+  storeFile,
+  `${JSON.stringify({
+    subscriptions: [
+      { endpoint: "https://push.example.test/phone", keys: { p256dh: b64url(receiver.getPublicKey()), auth: b64url(receiverAuth) }, label: "phone" },
+      { endpoint: "https://push.example.test/old-tablet", keys: { p256dh: b64url(receiver.getPublicKey()), auth: b64url(receiverAuth) }, label: "old-tablet" },
+    ],
+  })}\n`,
+);
+
+const pushConfig = {
+  ...quietConfig,
+  pushSubscriptions: storeFile,
+  vapidKeysFile: keysFile,
+  vapidSubject: "mailto:alerts@example.test",
+};
+const pushed = [];
+const pushDelivery = await deliver(first.alerts[0], pushConfig, async (url, options) => {
+  pushed.push({ url, options });
+  // The tablet is gone; the phone accepts the notification.
+  return { status: url.endsWith("/old-tablet") ? 410 : 201, ok: url.endsWith("/old-tablet") ? false : true, headers: { get: () => null } };
+});
+check(
+  pushDelivery.results.map((result) => result.channel),
+  ["log", "push(phone)", "push(old-tablet)", "push store"],
+  "Each subscription is reported separately, plus one line about the store",
+);
+check(
+  [pushDelivery.results[1].ok, pushDelivery.results[1].detail.startsWith("HTTP 201")],
+  [true, true],
+  "The accepted notification is reported as delivered, with its status and size",
+);
+check(
+  [pushDelivery.results[2].ok, pushDelivery.results[2].detail.startsWith("HTTP 410")],
+  [false, true],
+  "A gone subscription is reported as a failure, not as delivered",
+);
+check(
+  pushDelivery.results[3],
+  { channel: "push store", ok: true, detail: "dropped 1 gone subscription(s); 1 left" },
+  "The gone subscription is dropped from the store, and that is said out loud",
+);
+check(
+  readSubscriptions(storeFile).map((entry) => entry.endpoint),
+  ["https://push.example.test/phone"],
+  "…and the store on disk really holds only the live subscription",
+);
+check(pushed[0].url, "https://push.example.test/phone", "The notification is posted to the subscription endpoint");
+check(pushed[0].options.method, "POST", "…as a POST");
+check(pushed[0].options.headers.TTL, "1800", "…with the watcher's TTL");
+check(pushed[0].options.headers.Urgency, "high", "…marked urgent");
+check(pushed[0].options.headers.Topic, "loaded-900001", "…and collapsible per game");
+ok(pushed[0].options.headers.Authorization.startsWith("vapid t="), "…signed with VAPID");
+ok(!pushed[0].options.url?.includes("push.example.test/phone/"), "The endpoint itself is not rewritten");
+ok(
+  !JSON.stringify(pushDelivery.results).includes("push.example.test/phone"),
+  "The capability URL is masked in what gets logged",
+);
+
+// Decrypt the delivered bytes exactly as a browser would (RFC 8291 §3.4), and
+// check the plaintext is the very text the watcher decided to send.
+{
+  const body = pushed[0].options.body;
+  const salt = body.subarray(0, 16);
+  const keyIdLength = body.readUInt8(20);
+  const asPublic = body.subarray(21, 21 + keyIdLength);
+  const ciphertext = body.subarray(21 + keyIdLength, body.length - 16);
+  const tag = body.subarray(body.length - 16);
+  // Hand-rolled HKDF (extract then a single expand block) so this decryption is
+  // an independent implementation, not a call back into the code under test.
+  const hkdfExtract = (salt, ikm) => createHmac("sha256", salt).update(ikm).digest();
+  const hkdfExpand = (prk, info, length) =>
+    createHmac("sha256", prk)
+      .update(Buffer.concat([info, Buffer.from([1])])) // one block: T(1) = HMAC(PRK, info || 0x01)
+      .digest()
+      .subarray(0, length);
+  const shared = receiver.computeSecret(asPublic);
+  const prkKey = hkdfExtract(receiverAuth, shared);
+  const ikm = hkdfExpand(
+    prkKey,
+    Buffer.concat([Buffer.from("WebPush: info\0"), receiver.getPublicKey(), asPublic]),
+    32,
+  );
+  const prk = hkdfExtract(salt, ikm);
+  const cek = hkdfExpand(prk, Buffer.from("Content-Encoding: aes128gcm\0"), 16);
+  const nonce = hkdfExpand(prk, Buffer.from("Content-Encoding: nonce\0"), 12);
+  const decipher = createDecipheriv("aes-128-gcm", cek, nonce);
+  decipher.setAuthTag(tag);
+  const record = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  const notification = JSON.parse(record.subarray(0, record.length - 1).toString("utf8"));
+  check(
+    notification.body,
+    pushDelivery.text,
+    "The notification a browser would decrypt carries exactly the alert text the watcher sent",
+  );
+  check(notification.title, "BASES LOADED — BOT 9", "…under a title naming the situation and the inning");
+  check(
+    notification.url,
+    "https://www.mlb.com/gameday/900001",
+    "…and the official page a tap should open",
+  );
+  check(notification.tag, "loaded-900001", "…and the same collapse tag the request header carries");
+  check(notification.gamePk, 900001, "…and the game id, so a client can group alerts itself");
+  check(record[record.length - 1], 2, "…terminated by the 0x02 padding delimiter");
+  check(
+    body.readUInt8(20),
+    65,
+    "…and the header carries the application server's uncompressed key",
+  );
+}
+
+// Failure modes must name the problem, not look like a quiet channel.
+const halfConfigured = await deliver(first.alerts[0], { ...quietConfig, pushSubscriptions: storeFile }, async () => ({ status: 201, ok: true }));
+check(
+  [halfConfigured.results[1].channel, halfConfigured.results[1].ok],
+  ["push", false],
+  "A half-configured Web Push channel is reported as a failure",
+);
+const missingStore = await deliver(first.alerts[0], { ...pushConfig, pushSubscriptions: join(pushDirectory, "nope.json") }, async () => ({ status: 201, ok: true }));
+ok(
+  missingStore.results[1].detail.includes("no subscription store"),
+  "A store that does not exist yet is explained, not mistaken for a delivered push",
+);
+const emptyStore = join(pushDirectory, "empty.json");
+writeFileSync(emptyStore, `${JSON.stringify({ subscriptions: [{ endpoint: "https://x/", keys: {} }] })}\n`);
+ok(
+  (await deliver(first.alerts[0], { ...pushConfig, pushSubscriptions: emptyStore }, async () => ({ status: 201, ok: true }))).results[1].detail.includes("nothing usable"),
+  "A store full of unusable entries says so",
+);
+ok(
+  (await deliver(first.alerts[0], { ...pushConfig, vapidKeysFile: join(pushDirectory, "no-keys.json") }, async () => ({ status: 201, ok: true }))).results[1].detail.includes("cannot read VAPID keys"),
+  "A missing VAPID key file is named as the problem",
+);
+ok(
+  (await deliver(first.alerts[0], pushConfig, async () => {
+    throw new Error("ECONNRESET");
+  })).results.slice(1, 3).every((result) => !result.ok && result.detail.includes("ECONNRESET")),
+  "A push service that cannot be reached is a failure with its reason",
+);
+rmSync(pushDirectory, { recursive: true, force: true });
 
 /* ------------------------------------------------- state across restarts - */
 

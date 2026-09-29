@@ -38,6 +38,10 @@ jobs:
 
       - name: Validate the watcher deployment recipes
         run: node tools/watcher-deploy-test.mjs
+      - name: Web Push (RFC 8291 / RFC 8292 vectors)
+        run: node tools/webpush-test.mjs
+      - name: Phone-alerts panel
+        run: node tools/push-alerts-test.mjs
 
       - name: Validate the static site (links, claims, wiring)
         run: node tools/site-links-test.mjs

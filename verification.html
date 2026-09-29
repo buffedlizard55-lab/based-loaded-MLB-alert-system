@@ -630,10 +630,13 @@
             (<code>assets/js/bases-loaded-core.js</code>, required verbatim)
             outside the browser: same discovery cadence, same target rule, same
             situation logic, a JSONL log where every record carries its official
-            snapshot URL, and optional phone push through a webhook or ntfy. What
-            it still needs is somewhere to run — an always-on machine or
-            scheduler you provide; nothing is hosted for you and browser-grade
-            Web Push (VAPID) is still not implemented.
+            snapshot URL, and optional phone push through a webhook, ntfy, or
+            <strong>Web Push</strong> — the watcher now encrypts each alert to the
+            subscribed device (RFC 8291) and signs it with its own VAPID key
+            (RFC 8292), so the push service only ever holds ciphertext. Subscribe a
+            device from the <em>Phone alerts</em> panel on the monitor. What it
+            still needs is somewhere to run — an always-on machine or scheduler you
+            provide; nothing is hosted for you.
           </li>
           <li>
             <strong>Polling gaps.</strong> A situation that appears and resolves
@@ -653,14 +656,16 @@
           </li>
           <li>
             <strong>Live end-to-end proof is still pending.</strong> The rule
-            engine is covered by 11,765 deterministic checks, the monitor by 99, the watcher by 85,
-            the strip by 160, the always-on watcher by 85, its deployment recipes by
-            107 and the static site by 294 checks (counts as of
-            2026-09-29), and the published copy of this site is verified by
+            engine is covered by 11,765 deterministic checks, the monitor by 99,
+            the strip by 160, the always-on watcher by 120, its deployment recipes
+            by 120, the Web Push implementation by 130 (the RFC 8291 and RFC 8292
+            test vectors, intermediate values included), the phone-alerts panel by
+            74 and the static site by 343 checks (counts as of 2026-09-29), and the
+            published copy of this site is verified by
             <code>tools/deployed-site-test.mjs</code> on every merge and
-            nightly, but the honest next acceptance test is a real tied game
-            entering the bottom of the 9th with the bases loaded, observed end
-            to end.
+            nightly — but the honest next acceptance test is a real tied game
+            entering the bottom of the 9th with the bases loaded, observed end to
+            end, and carried all the way to a real phone notification.
           </li>
           <li>
             <strong>Development-sandbox network limit (flagged, open).</strong>
@@ -671,17 +676,19 @@
             smoke workflow.
           </li>
           <li>
-            <strong>Recommended next work:</strong> (1) browser-grade Web Push
-            (VAPID + a service worker) on top of the watcher — hosting recipes now
-            ship in <code>deploy/</code> with
-            <a href="docs/watcher-deployment.md">a deployment guide</a>, so what is
-            left is the push protocol itself, not the plumbing; (2) a cross-device
-            store for alert history, which the watcher's JSONL log is the natural
-            beginning of; (3) installable PWA with vibration; (4) wider alert context
-            (due-up hitters, pitcher line) only after verifying the extra fields
-            against a live payload. Done already, and listed here so the list stays
-            honest: the always-on watcher, its deployment recipes, exported history
-            and the official per-alert citation link — see the log below.
+            <strong>Recommended next work:</strong> (1) <em>prove it live</em> —
+            one real tied game entering the bottom of the 9th with the bases loaded,
+            watched by the running watcher with a subscribed phone, is the only
+            acceptance test left; (2) a cross-device store for alert history, which
+            the watcher's JSONL log is the natural beginning of; (3) an installable
+            PWA manifest with icons (iOS Web Push already requires
+            <em>Add to Home Screen</em>) and vibration; (4) watcher operations —
+            a <code>--doctor</code> mode, retry/backoff for push
+            <code>429</code>/<code>5xx</code>, and CLI listing/pruning of stored
+            subscriptions. Done already, and listed here so the list stays honest:
+            the always-on watcher, its deployment recipes, exported history, the
+            official per-alert citation link, and browser-grade Web Push — see the
+            log below.
           </li>
         </ul>
         <div class="doc-sub">
@@ -725,14 +732,15 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              294 checks: every internal link target on every page exists, no
+              343 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still
               present, the documented alert projection still matches
-              <code>api.js</code>, and CI runs every suite — while shipping no
-              competing Pages workflow and keeping the deterministic CI job
-              offline.
+              <code>api.js</code>, the phone-alerts panel is wired exactly as
+              described (and the service worker caches nothing), and CI runs
+              every suite — while shipping no competing Pages workflow and
+              keeping the deterministic CI job offline.
             </li>
             <li>
               <span class="doc-badge warn">Corrected</span>
@@ -763,7 +771,9 @@
               delivers through a webhook or ntfy when configured. It reports a
               failed channel with its reason — never as delivered — and it never
               guesses from play text or event names. Covered by
-              <code>tools/watcher-test.mjs</code> (85 checks) in CI.
+              <code>tools/watcher-test.mjs</code> (120 checks) in CI, including a
+              full encrypt → decrypt round trip of the bytes it posts for a
+              notification.
               <strong>Hosting it is a recipe now, not a research project:</strong>
               <code>deploy/</code> ships a hardened systemd unit, a Dockerfile and
               compose file (unprivileged user, read-only root, volume-backed state)
@@ -772,6 +782,32 @@
               with a container healthcheck that reads the watcher's own state file
               and says plainly what it does <em>not</em> prove. What no recipe can
               supply is the machine it runs on.
+            </li>
+            <li>
+              <span class="doc-badge ok">Shipped</span>
+              <strong>Browser-grade Web Push</strong> (the limitation this list
+              used to lead with). The watcher encrypts each alert to the
+              subscribed device with <code>tools/webpush.mjs</code> — RFC 8291
+              (<code>aes128gcm</code>, HKDF over the ECDH secret) and RFC 8292
+              (VAPID, an ES256 JWT in the raw <code>r||s</code> form JOSE
+              requires) implemented against Node's own crypto, no dependencies —
+              so the push service transports ciphertext it cannot read. It is
+              verified against the RFCs' published vectors value by value
+              (including the ECDH secret, <code>PRK_key</code>, IKM, PRK, CEK and
+              nonce) by <code>tools/webpush-test.mjs</code> (130 checks), and the
+              watcher test decrypts the bytes it actually posts with an
+              independently written receiver path. Two things the tests caught:
+              the RFC's own <code>Content-Length: 145</code> disagrees with its
+              decoded 144-octet body (the bytes win, and the discrepancy is
+              documented where a reader hits it), and the 3993-octet plaintext
+              limit is asserted as arithmetic — 4096 − 86 header − 1 delimiter −
+              16 tag — so it cannot quietly drift. Delivery is reported per device
+              (<code>push(phone): HTTP 201</code>), a subscription the service
+              reports gone is dropped from the store, and endpoints are masked in
+              logs. The monitor's <em>Phone alerts</em> panel subscribes a device
+              and hands over the store entry (74 checks); it states plainly that a
+              static site cannot reach your watcher, so the entry travels by
+              copy/paste.
             </li>
             <li>
               <span class="doc-badge ok">Shipped</span>

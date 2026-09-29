@@ -8,8 +8,8 @@
 #     -e WATCHER_LOG_DIR=/data -e WATCHER_NTFY_TOPIC=my-loaded-late \
 #     loaded-late-watcher
 #
-# There is no build step and no dependency install: the watcher is one file that
-# requires Node's own `fetch`, `fs` and `module`.
+# There is no build step and no dependency install: the watcher is two files that
+# use Node's own `fetch`, `fs`, `module` and `crypto` — including for Web Push.
 
 FROM node:22-alpine
 
@@ -22,8 +22,10 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 # Copy only what the watcher actually needs. The image does not need the pages,
-# the stylesheets or the other test suites.
+# the stylesheets or the other test suites. tools/webpush.mjs is imported by the
+# watcher (Web Push encryption + VAPID), so leaving it out would break startup.
 COPY tools/watcher.mjs /app/tools/watcher.mjs
+COPY tools/webpush.mjs /app/tools/webpush.mjs
 COPY deploy/healthcheck.mjs /app/deploy/healthcheck.mjs
 COPY assets/js/bases-loaded-core.js /app/assets/js/bases-loaded-core.js
 COPY LICENSE /app/LICENSE
