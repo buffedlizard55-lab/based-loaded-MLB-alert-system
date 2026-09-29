@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loaded Late — Live Chat Feed · Tied, Bases Loaded, Bottom 9+</title>
+  <meta name="description" content="Live chat-style feed for one very specific MLB situation: a tied game with the bases loaded in the bottom of the 9th or any later inning — the walk-off situation. Every event, from watch begins to walk-off, narrated live.">
+  <link rel="preconnect" href="https://statsapi.mlb.com" crossorigin>
+  <link rel="dns-prefetch" href="https://statsapi.mlb.com">
+  <link rel="dns-prefetch" href="https://www.mlbstatic.com">
+  <link rel="dns-prefetch" href="https://img.mlbstatic.com">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/bases-loaded-feed.css">
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0e1415">
+</head>
+<body class="page-loaded-alerts">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-ball">◆</span>
+      <span>LOADED LATE</span>
+      <span class="brand-sub">bases loaded · walk-off watch</span>
+    </div>
+    <a class="btn btn-ghost" href="scoreboard.html">Scoreboard ↗</a>
+    <a class="btn btn-ghost" href="bases-loaded.html">Situation monitor ↗</a>
+    <a class="btn btn-ghost" href="reviews.html">Replay feed ↗</a>
+    <a class="btn btn-ghost" href="verification.html">Sources ↗</a>
+    <div class="feed-controls">
+      <button id="sound-toggle-btn" class="btn btn-ghost" title="Toggle alert sound for bases-loaded and walk-off events">🔇 Sound Off</button>
+      <button id="notify-toggle-btn" class="btn btn-ghost" title="Desktop notifications for bases-loaded / walk-off">⚪ Alerts Off</button>
+      <button id="refresh-btn" class="btn">Refresh</button>
+      <span class="countdown" id="countdown" title="Seconds until the next poll"></span>
+      <div class="live-pill" title="Polling the MLB StatsAPI">
+        <span id="live-dot" class="live-dot"></span><span>LIVE</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="banner" class="banner"></div>
+
+  <div id="demo-banner" class="bl-demo" hidden>
+    <div>
+      <strong>DEMO · Synthetic game, no live data</strong>
+      <p id="demo-description">Click "Next scenario" to walk through a tied ninth-inning walk-off situation step by step.</p>
+    </div>
+    <button class="btn" id="demo-next">Next scenario →</button>
+    <a href="alerts.html">Back to live ↗</a>
+  </div>
+
+  <main class="bl-main">
+    <section class="bl-summary-bar">
+      <div class="bl-stat bl-stat-loaded">
+        <div class="bl-stat-label">Bases loaded now</div>
+        <div class="bl-stat-value" id="stat-active">—</div>
+        <div class="bl-stat-small">Tied · bot 9+ · &lt;3 outs</div>
+      </div>
+      <div class="bl-stat bl-stat-watch">
+        <div class="bl-stat-label">On watch</div>
+        <div class="bl-stat-value" id="stat-watch">—</div>
+        <div class="bl-stat-small">Tied · late · home still batting</div>
+      </div>
+      <div class="bl-stat bl-stat-tension">
+        <div class="bl-stat-label">Alerts today</div>
+        <div class="bl-stat-value" id="stat-today">0</div>
+        <div class="bl-stat-small">Bases-loaded observed (last 24h)</div>
+      </div>
+      <div class="bl-stat bl-stat-walkoffs">
+        <div class="bl-stat-label">Walk-offs seen</div>
+        <div class="bl-stat-value" id="stat-walkoffs">0</div>
+        <div class="bl-stat-small">Since this tab was opened</div>
+      </div>
+      <div class="bl-stat">
+        <div class="bl-stat-label">Feed events</div>
+        <div class="bl-stat-value" id="stat-events">—</div>
+        <div class="bl-stat-small" id="updated">Waiting for first snapshot</div>
+      </div>
+    </section>
+
+    <section id="feed-list" class="bl-feed-list" aria-live="polite"></section>
+
+    <footer class="site-footer" style="margin-top:28px; max-width:980px; margin-left:auto; margin-right:auto;">
+      <p>
+        <strong>One situation. Every game.</strong> This feed tracks
+        <em>only</em> games that are tied in the bottom of the 9th inning or
+        later, and narrates every step toward a walk-off bases-loaded
+        situation — watch begins, runners reaching, the moment all three bases
+        fill, tension rising, and the resolution (walk-off hit, third out,
+        bases cleared, or extra innings). Nothing else triggers an alert.
+      </p>
+      <p>
+        Live data via the public MLB StatsAPI
+        (<a href="https://statsapi.mlb.com" target="_blank" rel="noopener">statsapi.mlb.com</a>).
+        We read official runner occupancy on first, second and third — we do
+        not guess from play text. Walks, hits, errors, catcher/fielder
+        interference, automatic extra-inning runners, and official corrections
+        are all caught by the same rule. Wild pitches, passed balls, steals,
+        and balks move existing runners but don't add a new one; the chat
+        reflects only what the official linescore actually says.
+      </p>
+      <p>
+        <a href="?demo=1">Try the guided demo ↗</a> ·
+        <a href="bases-loaded.html">Full situation monitor ↗</a> ·
+        <a href="verification.html">Requirements, routes &amp; official sources ↗</a>
+      </p>
+      <p>
+        Unofficial, personal-use fan project. Not affiliated with MLB or MLB
+        Advanced Media.
+      </p>
+    </footer>
+  </main>
+
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/ui.js"></script>
+  <script src="assets/js/bases-loaded-core.js"></script>
+  <script src="assets/js/bases-loaded-feed.js"></script>
+</body>
+</html>

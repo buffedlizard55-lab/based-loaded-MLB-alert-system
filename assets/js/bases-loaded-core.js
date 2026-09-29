@@ -525,6 +525,323 @@ const BasesLoadedRules = (() => {
     return `loaded-late-alerts-${stamp}.${kind === "csv" ? "csv" : "json"}`;
   }
 
+  /* ------------------------------------------------------------------------
+   * Stream diff — chat-style timeline events.
+   *
+   * observe() above returns ONE event ("bases loaded, alert!") which is what
+   * the monitor page uses for its primary alert. A chat-style feed wants to
+   * narrate every meaningful step along the way: the watch window opening,
+   * runners advancing, the bases loading, tension rising, the situation
+   * resolving (walk-off / 3rd out / bases clearing), and rain delays.
+   *
+   * diffStream(previous, observation, game, now) returns an ARRAY of events
+   * (0..N) to append to the feed. `previous` is the last stream state for
+   * that game (persist the returned `state`); `observation` is the return of
+   * observe() — which already carries the current evaluate() result and the
+   * one-shot alert event. This keeps every decision tied to one evaluate()
+   * call and to the existing rules, so the feed cannot disagree with the
+   * monitor about what counts.
+   *
+   * Event kinds (stable strings — tests pin them):
+   *   watch_begins        — a tied game enters the bottom of the 9th (or later),
+   *                         so we start watching for a walk-off opportunity.
+   *   watch_ends          — a previously-watched game leaves the watch window
+   *                         (no longer tied / final / out of a qualifying half).
+   *   runner_advanced     — a runner reached or advanced while on watch.
+   *   bases_loaded        — the exact alert: tied, bottom 9+, all three bases
+   *                         occupied, <3 outs. Fires once per continuous
+   *                         loaded situation (same as observe()'s event).
+   *   tension_update      — outs/count changed while still loaded; carries the
+   *                         new tension. Fires only on tension-increasing
+   *                         transitions so steady-state noise stays quiet.
+   *   walkoff_rbi         — the third out never happened: the home team took
+   *                         the lead (away !== home, home ahead) in a
+   *                         previously-loaded bottom 9+ half — a walk-off.
+   *   bases_cleared       — loaded situation ended without a walk-off (third
+   *                         out, or a runner retired/erased).
+   *   half_change         — entering the next inning's top half (still tied
+   *                         → watch continues into extras); or entering a new
+   *                         bottom half with the game still tied (new watch).
+   *   paused              — rain delay / suspension, watch held.
+   *   resumed             — play resumed after a pause.
+   *   final               — game went final while on watch.
+   *   data_unavailable    — a snapshot arrived incomplete or errored; the
+   *                         watch is held, shown but not cleared.
+   * --------------------------------------------------------------------- */
+
+  const STREAM_EVENT_KINDS = Object.freeze([
+    "watch_begins",
+    "watch_ends",
+    "runner_advanced",
+    "bases_loaded",
+    "tension_update",
+    "walkoff_rbi",
+    "bases_cleared",
+    "half_change",
+    "paused",
+    "resumed",
+    "final",
+    "data_unavailable",
+  ]);
+
+  function mkEvent(kind, game, result, now, extra = {}) {
+    return {
+      id: `${game.gamePk}:${kind}:${now}:${Math.random().toString(36).slice(2, 8)}`,
+      kind,
+      gamePk: game.gamePk,
+      away: game.teams?.away?.team?.name || "Away",
+      home: game.teams?.home?.team?.name || "Home",
+      awayScore: result?.away ?? null,
+      homeScore: result?.home ?? null,
+      inning: result?.inning ?? null,
+      outs: result?.outs ?? null,
+      balls: result?.balls ?? null,
+      strikes: result?.strikes ?? null,
+      runners: Array.isArray(result?.bases) ? result.bases.map((r) => (r ? { ...r } : null)) : [null, null, null],
+      runnersOn: result?.runnersOn ?? 0,
+      tied: !!result?.tied,
+      entering: !!result?.entering,
+      tension: result?.tension ?? 0,
+      tensionLabel: result?.tensionLabel ?? "",
+      lastEvent: result?.lastEvent || null,
+      currentPlay: result?.currentPlay || null,
+      batter: result?.batter || null,
+      pitcher: result?.pitcher || null,
+      onDeck: result?.onDeck || null,
+      inHole: result?.inHole || null,
+      observedAt: now,
+      ...extra,
+    };
+  }
+
+  function basesSame(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== 3 || b.length !== 3) return false;
+    for (let i = 0; i < 3; i++) {
+      const ai = a[i]?.id ?? null;
+      const bi = b[i]?.id ?? null;
+      if (ai !== bi) return false;
+    }
+    return true;
+  }
+
+  function diffStream(prevState, observation, game, now, errorMsg = "") {
+    const events = [];
+    const result = observation?.result || {};
+    const prev = prevState || null;
+    const paused =
+      game.status?.abstractGameState === "Live" &&
+      /delay|suspend/i.test(game.status?.detailedState || "");
+    const isFinal = game.status?.abstractGameState === "Final";
+    const known = !!result.known;
+    const watching = !!result.watching;
+    const loaded = !!result.loaded;
+    const wasWatching = !!(prev?.watching || prev?.loaded);
+    const wasLoaded = !!prev?.loaded;
+    const wasPaused = !!prev?.paused;
+
+    // 1. Data unavailability / pause / resume are surfaced as transitions.
+    if (errorMsg && (!prev || !prev.error)) {
+      events.push(
+        mkEvent("data_unavailable", game, result, now, { message: errorMsg }),
+      );
+    }
+    if (paused && !wasPaused && wasWatching) {
+      events.push(
+        mkEvent("paused", game, result, now, {
+          detail: game.status?.detailedState || "Delayed",
+        }),
+      );
+    }
+    if (wasPaused && !paused && wasWatching) {
+      events.push(mkEvent("resumed", game, result, now));
+    }
+
+    if (!known) {
+      return {
+        events,
+        state: {
+          ...(prev || {}),
+          paused,
+          error: errorMsg || prev?.error || "",
+          observedAt: now,
+        },
+      };
+    }
+
+    // 2. Final: if we were watching and the game is now final, report the
+    // outcome. The official home/away scores tell us whether the home team
+    // walked off (home > away) or the away team won (away > home in the top
+    // half or after a half-inning flip).
+    if (isFinal && wasWatching) {
+      const homeWalkedOff = Number.isInteger(result.home) && Number.isInteger(result.away) && result.home > result.away;
+      events.push(
+        mkEvent(
+          homeWalkedOff ? "walkoff_rbi" : "final",
+          game,
+          result,
+          now,
+          {
+            detail: homeWalkedOff
+              ? "Home team wins — walk-off."
+              : "Game ended without a walk-off from this situation.",
+            finalScore: { away: result.away, home: result.home },
+          },
+        ),
+      );
+    }
+
+    // 3. Watch window starts / stops.
+    if (watching && !wasWatching && !isFinal) {
+      // Distinguish first watch of the game (entering bottom 9) from "new
+      // extra inning, still tied" (half_change + watching).
+      const isNewInning =
+        prev && Number.isInteger(prev.inning) && Number.isInteger(result.inning) &&
+        result.inning > prev.inning;
+      events.push(
+        mkEvent("watch_begins", game, result, now, {
+          detail: result.entering
+            ? `Tied going to the bottom of the ${result.inning}th.`
+            : `Tied in the bottom of the ${result.inning}th — walk-off watch is on.`,
+          isNewExtraInning: !!isNewInning,
+        }),
+      );
+    }
+
+    if (wasWatching && !watching && !isFinal && !paused) {
+      // If the game is no longer tied and home is ahead while in/after a
+      // loaded bottom half, that's a walk-off.
+      const homeLeading = Number.isInteger(result.home) && Number.isInteger(result.away) && result.home > result.away;
+      const halfIsBottom =
+        String(game.linescore?.inningState || "").toLowerCase() === "bottom";
+      if (homeLeading && halfIsBottom && wasLoaded) {
+        events.push(
+          mkEvent("walkoff_rbi", game, result, now, {
+            detail: "Home team takes the lead — walk-off.",
+          }),
+        );
+      } else if (result.outs === 3 && wasLoaded) {
+        events.push(
+          mkEvent("bases_cleared", game, result, now, {
+            detail: "Three outs — the side is retired. Bases cleared.",
+          }),
+        );
+      } else {
+        events.push(
+          mkEvent("watch_ends", game, result, now, {
+            detail: "No longer in a qualifying situation.",
+          }),
+        );
+      }
+    }
+
+    // 4. Half-inning changeover while still watching (e.g. top 10 / bot 10
+    // after a scoreless bot 9 that stays tied).
+    if (
+      watching && wasWatching && !isFinal &&
+      Number.isInteger(result.inning) && Number.isInteger(prev?.inning) &&
+      result.inning !== prev.inning
+    ) {
+      events.push(
+        mkEvent("half_change", game, result, now, {
+          detail: `Moving to the ${result.inning}th inning, game still tied.`,
+        }),
+      );
+    }
+
+    // 5. Bases loaded alert.
+    if (loaded && !wasLoaded && !isFinal) {
+      // If observe() already produced a rich alert event for this moment,
+      // reuse its id so the chat row dedups cleanly with the monitor's alert.
+      const ob = observation.event;
+      events.push(
+        mkEvent("bases_loaded", game, result, now, {
+          alertId: ob?.id || null,
+          detail: result.lastEvent
+            ? `Bases loaded on: ${result.lastEvent}.`
+            : "All three bases are occupied.",
+        }),
+      );
+    }
+
+    // 6. Bases cleared while still in the same watching half (out, runner
+    // erased, run scores with <3 outs that clears third, etc.) — but NOT when
+    // already covered by watch_ends/bases_cleared above.
+    if (loaded && wasLoaded && !isFinal && !watching) {
+      // covered by watch_ends / bases_cleared path
+    } else if (wasLoaded && !loaded && watching && !isFinal) {
+      // Still watching but bases no longer loaded (runner retired / force /
+      // run scored leaving <3 occupied).
+      events.push(
+        mkEvent("bases_cleared", game, result, now, {
+          detail: "Bases are no longer loaded — watching continues.",
+        }),
+      );
+    }
+
+    // 7. Runner advance / additional runner reached while on watch but not
+    // yet loaded, so the chat narrates "one away" → "two away" progression.
+    if (
+      watching && !loaded && !isFinal && wasWatching && !wasLoaded &&
+      Array.isArray(prev?.runners) && !basesSame(prev.runners, result.bases)
+    ) {
+      const prevCount = prev.runners.filter(Boolean).length;
+      const nowCount = result.bases.filter(Boolean).length;
+      if (nowCount > prevCount) {
+        events.push(
+          mkEvent("runner_advanced", game, result, now, {
+            detail: result.lastEvent
+              ? `${result.lastEvent} — ${occupancyLabel(result.bases.map(Boolean))}.`
+              : `Runner reaches — ${occupancyLabel(result.bases.map(Boolean))}.`,
+          }),
+        );
+      }
+    }
+
+    // 8. Tension update while loaded (outs/count changed). Only fires when
+    // the new tension is strictly higher than the last pinned value, so a
+    // normal count reset between batters doesn't spam the feed.
+    if (loaded && wasLoaded && !isFinal) {
+      const pinned = Number.isInteger(prev?.tensionPinned) ? prev.tensionPinned : (prev?.tension ?? 0);
+      if ((result.tension || 0) > pinned) {
+        events.push(
+          mkEvent("tension_update", game, result, now, {
+            detail: `${result.outs} out${result.outs === 1 ? "" : "s"} · count ${result.balls}-${result.strikes} — tension ${result.tensionLabel}.`,
+          }),
+        );
+      }
+    }
+
+    return {
+      events,
+      state: {
+        watching,
+        loaded,
+        paused,
+        inning: result.inning,
+        runners: result.bases,
+        runnersOn: result.runnersOn,
+        tension: result.tension,
+        tensionPinned:
+          loaded && wasLoaded
+            ? Math.max(
+                Number.isInteger(prev?.tensionPinned) ? prev.tensionPinned : (prev?.tension ?? 0),
+                result.tension || 0,
+              )
+            : loaded
+              ? result.tension
+              : 0,
+        outs: result.outs,
+        balls: result.balls,
+        strikes: result.strikes,
+        tied: result.tied,
+        awayScore: result.away,
+        homeScore: result.home,
+        error: "",
+        observedAt: now,
+      },
+    };
+  }
+
   return {
     evaluate,
     observe,
@@ -545,6 +862,8 @@ const BasesLoadedRules = (() => {
     historyJSON,
     evidenceLine,
     historyFileName,
+    diffStream,
+    STREAM_EVENT_KINDS,
   };
 })();
 if (typeof module !== "undefined" && module.exports)

@@ -88,16 +88,19 @@ const ASSETS = [
 const PUBLISHED_FILES = [
   "index.html",
   "bases-loaded.html",
+  "alerts.html",
   "verification.html",
   ...PAGES,
   "assets/js/bases-loaded.js",
   "assets/js/bases-loaded-core.js",
   "assets/js/bases-loaded-strip.js",
+  "assets/js/bases-loaded-feed.js",
   "assets/js/push-alerts.js",
   "assets/js/vapid-config.js",
   "sw.js",
   "assets/css/bases-loaded.css",
   "assets/css/bases-loaded-strip.css",
+  "assets/css/bases-loaded-feed.css",
   "manifest.webmanifest",
 ];
 
@@ -179,6 +182,15 @@ async function assess(state) {
       flat(basesLoaded.body).includes('id="board"') &&
       flat(basesLoaded.body).includes('id="tied-count"'),
     `bases-loaded.html is published with the slate and the tied metric (${basesLoaded.status})`,
+  );
+
+  const alerts = await get("alerts.html");
+  ok(
+    alerts.status === 200 &&
+      flat(alerts.body).includes('id="feed-list"') &&
+      flat(alerts.body).includes("bases-loaded-feed.js") &&
+      flat(alerts.body).includes("bases-loaded-feed.css"),
+    `alerts.html (chat-style feed) is published with its feed container, script and stylesheet (${alerts.status})`,
   );
 
   const verification = await get("verification.html");
