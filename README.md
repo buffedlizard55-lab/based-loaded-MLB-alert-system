@@ -161,8 +161,10 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 **Suggested work, in priority order (next session / the session after)**
 
 1. **Ship it:** enable GitHub Pages for this repo (Settings → Pages → Deploy from a
-   branch → `main` / `/ (root)`), open the deployed monitor, and walk the UI once —
-   this session attempts the same via the GitHub API.
+   branch → `main` / `/ (root)`), open the deployed monitor, and walk the UI once.
+   Flagged irregularity: the in-session GitHub API attempt was rejected with HTTP 403
+   (*Resource not accessible by integration*) — the automation token lacks the Pages
+   permission, so this stays a one-time manual Settings click for the repo owner.
 2. **Live-fire verification:** on the next tied game entering bot 9+, keep the monitor
    visible and record watch → load → chime → notification with the game link as proof.
 3. **Always-on delivery (the big one):** a small Node watcher reusing
