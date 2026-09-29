@@ -733,6 +733,16 @@
               the evidence line, file naming).
             </li>
             <li>
+              <span class="doc-badge warn">Corrected</span>
+              The deployment check failed its first run on <code>main</code> for a timing
+              reason, not a content one: GitHub Pages builds <em>after</em> the merge
+              commit, so the check was comparing against the previous deployment. It now
+              retries the whole assessment — 30 rounds × 15 s in CI — until the published
+              bytes match, and its annotations name the differing byte and point at the
+              Pages build when a mismatch persists. Proven against a deliberately stale
+              server, and verified by the <code>main</code> run that followed.
+            </li>
+            <li>
               <span class="doc-badge ok">Verified</span>
               Deployment checked rather than assumed on 2026-09-29: the Pages
               API reports <code>status: "built"</code> with
