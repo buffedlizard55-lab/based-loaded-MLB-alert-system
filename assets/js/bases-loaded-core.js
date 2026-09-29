@@ -65,7 +65,9 @@ const BasesLoadedRules = (() => {
     });
     const state = String(ls.inningState || "").toLowerCase();
     const bottom = state === "bottom" && ls.isTopInning !== true;
-    const entering = state === "middle" || (state === "top" && outs === 3);
+    const entering =
+      state === "middle" ||
+      (state === "top" && ls.isTopInning !== false && outs === 3);
     const tied = away !== null && home !== null && away === home;
     const eligible =
       isLive(game.status) && inning !== null && inning >= 9 && tied;
@@ -90,10 +92,40 @@ const BasesLoadedRules = (() => {
       game.linescore?.currentPlay?.result?.description || null;
     const lastEvent = ls.currentPlay?.result?.event || null;
 
-    // Three outs can leave runners in the feed, but there is no longer a live threat.
+    // An incomplete live snapshot must not re-arm a previously active alert.
+    const offenseKnown =
+      ls.offense !== null &&
+      typeof ls.offense === "object" &&
+      !Array.isArray(ls.offense);
+    const occupiedIds = bases.filter(Boolean).map((runner) => runner.id);
+    const occupancyKnown =
+      offenseKnown &&
+      new Set(occupiedIds).size === occupiedIds.length &&
+      ["first", "second", "third"].every(
+        (base) => ls.offense[base] == null || number(ls.offense[base].id) > 0,
+      );
+    const statusKnown = ["Live", "Final", "Preview"].includes(
+      game.status?.abstractGameState,
+    );
+    const known =
+      statusKnown &&
+      (!isLive(game.status) ||
+        (inning !== null &&
+          inning >= 1 &&
+          away !== null &&
+          home !== null &&
+          outs !== null &&
+          outs <= 3 &&
+          ["top", "middle", "bottom", "end"].includes(state) &&
+          !(state === "bottom" && ls.isTopInning === true) &&
+          !(state === "top" && ls.isTopInning === false) &&
+          occupancyKnown));
+
+    // Unknown data must never appear as a confirmed watch/alert. Three outs can
+    // leave runners in the feed, but there is no longer a live threat.
     const watching =
-      eligible &&
-      (entering || (bottom && outs !== null && outs >= 0 && outs < 3));
+      known && eligible &&
+      (entering || (bottom && outs !== null && outs < 3));
     const loaded = watching && bottom && outs < 3 && bases.every(Boolean);
 
     // Tension level (only meaningful when loaded or watching with runners on)
@@ -105,25 +137,6 @@ const BasesLoadedRules = (() => {
 
     // Number of runners on base (for watch display)
     const runnersOn = bases.filter(Boolean).length;
-
-    // An incomplete live snapshot must not re-arm a previously active alert.
-    const occupancyKnown = ["first", "second", "third"].every(
-      (base) => ls.offense?.[base] == null || number(ls.offense[base].id) > 0,
-    );
-    const statusKnown = ["Live", "Final", "Preview"].includes(
-      game.status?.abstractGameState,
-    );
-    const known =
-      statusKnown &&
-      (!isLive(game.status) ||
-        (inning !== null &&
-          away !== null &&
-          home !== null &&
-          outs !== null &&
-          ["top", "middle", "bottom", "end"].includes(state) &&
-          !(state === "bottom" && ls.isTopInning === true) &&
-          !!ls.offense &&
-          occupancyKnown));
 
     return {
       inning,
@@ -241,7 +254,12 @@ const BasesLoadedRules = (() => {
   function observe(previous, game, now = Date.now()) {
     const result = evaluate(game);
     const inningKey = `${game.gamePk}:${result.inning}`;
-    if (!result.known) return { state: previous, event: null, result };
+    // A rain delay/suspension pauses play; it does not prove the bases cleared.
+    // Keep the episode armed as before so resumption does not create a duplicate.
+    const paused =
+      game.status?.abstractGameState === "Live" &&
+      /delay|suspend/i.test(game.status?.detailedState || "");
+    if (!result.known || paused) return { state: previous, event: null, result };
     const continuing = previous?.active && previous.inningKey === inningKey;
     const serial = previous?.serial || 0;
     const event =

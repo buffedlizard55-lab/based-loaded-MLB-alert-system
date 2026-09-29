@@ -180,7 +180,53 @@ for (const event of [
     `Do not infer loaded from ${event} alone`,
   );
 }
+// Exhaustive situation matrix: no inning cap, count requirement, or out preference.
+for (let inning = 1; inning <= 30; inning++) {
+  for (const inningState of ["Top", "Middle", "Bottom", "End"]) {
+    for (let outs = 0; outs <= 3; outs++) {
+      for (const home of [3, 4, 5]) {
+        for (let mask = 0; mask < 8; mask++) {
+          const offense = Object.fromEntries(
+            ["first", "second", "third"].flatMap((base, i) =>
+              mask & (1 << i) ? [[base, { id: i + 1 }]] : []),
+          );
+          const g = game({ currentInning: inning, inningState, outs, offense,
+            isTopInning: inningState === "Top",
+            teams: { away: { runs: 4 }, home: { runs: home } } });
+          check(!!rules.observe(null, g, 1000).event,
+            inning >= 9 && inningState === "Bottom" && outs < 3 && home === 4 && mask === 7,
+            `${inningState} ${inning}, ${outs} outs, 4–${home}, occupancy ${mask}`);
+        }
+      }
+    }
+  }
+}
 let initial = rules.observe(null, game(), 1000);
+for (const incomplete of [
+  { offense: [] }, { offense: "unavailable" }, { offense: true },
+  { offense: { first: { id: 1 }, second: { id: 1 }, third: { id: 3 } } },
+  { outs: 4 }, { currentInning: 0 },
+  { inningState: "Top", isTopInning: false, outs: 3 },
+]) {
+  const result = rules.observe(initial.state, game(incomplete), 1500);
+  check(result.result.known, false, "Invalid official snapshot is unknown");
+  check(result.result.watching, false, "Unknown snapshot is not a confirmed watch");
+  check(result.result.loaded, false, "Unknown snapshot is not a confirmed alert");
+  check(result.state, initial.state, "Invalid snapshot cannot re-arm episode");
+  check(rules.observe(result.state, game(), 1600).event, null, "Recovery stays quiet");
+}
+for (const detailedState of ["Delayed", "Suspended"] ) {
+  const paused = { ...game(), status: { abstractGameState: "Live", detailedState } };
+  const observation = rules.observe(initial.state, paused, 1700);
+  check(observation.result.loaded, false, "Paused play is not an active alert");
+  check(observation.state, initial.state, "Pause preserves previous episode");
+  check(rules.observe(observation.state, game(), 1800).event, null, "Resumption is not a reload");
+}
+// A loaded walk can tie the game without ever clearing the bases.
+const trailing = rules.observe(null, game({ teams: { away: { runs: 4 }, home: { runs: 3 } } }), 100);
+check(trailing.event, null, "Loaded but trailing never alerts");
+check(!!rules.observe(trailing.state, game(), 200).event, true, "Tying run plus loaded bases alerts immediately");
+
 check(!!initial.event, true, "Initial observation alerts");
 check(
   rules.observe(initial.state, game(), 2000).event,

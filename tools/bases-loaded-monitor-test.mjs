@@ -378,6 +378,14 @@ check(
   "Demo isolated from live history",
 );
 check(demo.notices.length, 0, "No demo notifications without explicit opt-in");
+await demo.click("demo-next");
+check(demo.nodes["active-count"].textContent, 0, "Demo loaded but trailing is excluded");
+await demo.click("demo-next");
+check(demo.nodes["active-count"].textContent, 1, "Demo tying walk alerts with bases still loaded");
+check(demo.nodes["history-count"].textContent, 5, "Demo saves the newly tied bottom-15 situation");
+await demo.click("demo-next");
+check(demo.nodes["history-count"].textContent, 0, "Demo restart clears synthetic history");
+check(demoStore.get("loaded-late:v3"), "leave untouched", "Restart still never writes live history");
 const slate = Array.from({ length: 7 }, (_, i) => {
   const game = fixture();
   game.gamePk = i + 1000;

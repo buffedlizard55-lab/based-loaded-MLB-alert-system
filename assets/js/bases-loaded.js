@@ -613,7 +613,7 @@
     else showDemo(false);
   });
 
-  // Enhanced guided demo covering every bases-loaded path
+  // Representative synthetic paths; detection never depends on play descriptions.
   const demoSteps = [
     {
       inning: 9,
@@ -646,7 +646,7 @@
       inning: 9,
       state: "Bottom",
       outs: 0,
-      balls: 4,
+      balls: 0,
       strikes: 0,
       bases: [true, false, false],
       batter: "J. Ramirez",
@@ -670,7 +670,7 @@
       outs: 1,
       balls: 2,
       strikes: 2,
-      bases: [true, true, false],
+      bases: [false, true, true],
       batter: "S. Ohtani",
       pitcher: "C. Sale",
       text: "Groundout advances runners to 2nd and 3rd, but first is now open. One out, not yet loaded.",
@@ -714,12 +714,12 @@
       inning: 9,
       state: "Bottom",
       outs: 2,
-      balls: 3,
-      strikes: 2,
+      balls: 0,
+      strikes: 0,
       bases: [true, true, true],
-      batter: "M. Trout",
+      batter: "B. Harper",
       pitcher: "C. Sale",
-      text: "Hit-by-pitch with the bases partially loaded reloads them! New alert, maximum tension: 2 outs, full count.",
+      text: "Hit-by-pitch fills the open first base! New alert at 2 outs. The next batter starts with a fresh 0-0 count; no particular count is required.",
     },
     {
       inning: 9,
@@ -738,10 +738,10 @@
       outs: 0,
       balls: 0,
       strikes: 0,
-      bases: [true, false, false],
+      bases: [false, true, false],
       batter: "M. Betts",
       pitcher: "J. Hader",
-      text: "Extra innings: bottom 10, tied. Placed runner starts on 2nd, reaches first on fielder's choice.",
+      text: "Extra innings: bottom 10, tied. The automatic runner starts on second. Only one base is occupied — no alert yet.",
     },
     {
       inning: 10,
@@ -752,8 +752,8 @@
       bases: [true, true, false],
       batter: "F. Freeman",
       pitcher: "J. Hader",
-      lastEvent: "Wild Pitch",
-      text: "Wild pitch advances runners. Now on 1st and 2nd. WP is another path to filling the bases.",
+      lastEvent: "Walk",
+      text: "A walk puts the batter on first; the automatic runner remains on second. Two occupied bases, still on watch.",
     },
     {
       inning: 10,
@@ -777,6 +777,26 @@
       batter: "C. Correa",
       pitcher: "E. Diaz",
       text: "Bottom 14, 2 walks + placed runner = loaded. Full count, one out. No upper inning limit exists.",
+    },
+    {
+      inning: 15,
+      state: "Bottom",
+      outs: 1,
+      balls: 3,
+      strikes: 1,
+      bases: [true, true, true],
+      home: 3,
+      text: "Bottom 15, loaded, but the home team trails 4–3. We scan this game, but it is not a tied-game alert.",
+    },
+    {
+      inning: 15,
+      state: "Bottom",
+      outs: 1,
+      balls: 0,
+      strikes: 0,
+      bases: [true, true, true],
+      lastEvent: "Walk",
+      text: "A bases-loaded walk forces in the tying run: 4–4, still loaded! Alert immediately, even though the home half began with an unequal score.",
     },
   ];
 
