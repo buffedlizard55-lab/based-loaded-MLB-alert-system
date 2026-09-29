@@ -564,7 +564,7 @@
           .join("\n");
         const notice = new Notification(
           `${demo ? "DEMO · " : ""}Tied. Bases loaded. Bottom ${event.inning}.${event.tension >= 4 ? " 🔥 " + event.tensionLabel : ""}`,
-          { body, tag: event.id },
+          { body, tag: event.id, vibrate: [...rules.vibratePattern] },
         );
         notice.onclick = () => {
           notice.close();
@@ -658,13 +658,19 @@
           </div>`
         : "";
 
-    // Batter/pitcher display
+    // Batter/pitcher display, plus the two hitters due up after the current
+    // one. The feed exposes them as offense.onDeck / offense.inHole — the
+    // batting side's own upcoming order (verified live, see bases-loaded-core).
+    const dueUp = [result.onDeck?.name, result.inHole?.name]
+      .filter(Boolean)
+      .map((name) => escape(name))
+      .join(" → ");
     const matchupHTML =
       (result.batter || result.pitcher) && (isLoaded || result.watching)
         ? `<div class="card-matchup">
             ${result.batter ? `<span class="matchup-batter" title="Current batter">⚾ ${escape(result.batter.name)}</span>` : ""}
             ${result.pitcher ? `<span class="matchup-pitcher" title="Current pitcher">🎯 ${escape(result.pitcher.name)}</span>` : ""}
-            ${result.onDeck ? `<span class="matchup-ondeck" title="On deck">↗ ${escape(result.onDeck.name)}</span>` : ""}
+            ${dueUp ? `<span class="matchup-dueup" title="Due up next">↗ due up: ${dueUp}</span>` : ""}
           </div>`
         : "";
 

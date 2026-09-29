@@ -630,7 +630,10 @@
   background: #1e2230;
   border: 1px solid #3a4a6a;
 }
-.matchup-ondeck {
+/* "On deck" and the wider "due up" chip share one quiet treatment: context,
+ * not the alert itself. */
+.matchup-ondeck,
+.matchup-dueup {
   color: #8a9a8a;
   padding: 4px 8px;
   border-radius: 4px;

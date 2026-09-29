@@ -12,6 +12,14 @@
     <link rel="stylesheet" href="assets/css/bases-loaded.css" />
     <link rel="stylesheet" href="assets/css/bases-loaded-strip.css" />
     <link rel="preconnect" href="https://statsapi.mlb.com" crossorigin />
+      <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
+    <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#0e1415" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Loaded Late" />
   </head>
   <body class="loaded-page">
     <header class="loaded-header">
@@ -139,7 +147,7 @@
                   <code>index.html</code> / <code>bases-loaded.html</code>
                 </td>
                 <td>
-                  <code>node tools/bases-loaded-test.mjs</code> (11,765 checks);
+                  <code>node tools/bases-loaded-test.mjs</code> (11,772 checks);
                   open <code>?demo=1</code> and step to the alert scenarios
                 </td>
               </tr>
@@ -656,11 +664,11 @@
           </li>
           <li>
             <strong>Live end-to-end proof is still pending.</strong> The rule
-            engine is covered by 11,765 deterministic checks, the monitor by 99,
-            the strip by 160, the always-on watcher by 120, its deployment recipes
-            by 120, the Web Push implementation by 130 (the RFC 8291 and RFC 8292
+            engine is covered by 11,772 deterministic checks, the monitor by 99,
+            the strip by 160, the always-on watcher by 159, its deployment recipes
+            by 112, the Web Push implementation by 130 (the RFC 8291 and RFC 8292
             test vectors, intermediate values included), the phone-alerts panel by
-            74 and the static site by 345 checks (counts as of 2026-09-29), and the
+            74 and the static site by 347 checks (counts as of 2026-09-29), and the
             published copy of this site is verified by
             <code>tools/deployed-site-test.mjs</code> on every merge and
             nightly — but the honest next acceptance test is a real tied game
@@ -697,7 +705,7 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Rule engine: <code>node tools/bases-loaded-test.mjs</code> —
-              11,765 checks, including an 11,520-case inning/half/outs/score/
+              11,772 checks, including an 11,520-case inning/half/outs/score/
               occupancy matrix and all eight occupancy patterns.
             </li>
             <li>
@@ -711,7 +719,7 @@
               than assumed.
             </li>
             <li>
-              Always-on watcher: <code>node tools/watcher-test.mjs</code> — 120
+              Always-on watcher: <code>node tools/watcher-test.mjs</code> — 159
               checks with a stubbed network and clock: what must and must not
               alert, de-duplication and re-arming, a delayed game, a failed
               schedule or snapshot, overnight carryovers, bounded concurrency,
@@ -733,7 +741,7 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              345 checks: every internal link target on every page exists, no
+              347 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still
@@ -761,6 +769,24 @@
             </li>
             <li>
               <span class="doc-badge ok">Shipped</span>
+              <strong>Installable on a phone</strong> (the everyday-use gap). The
+              site now carries a web-app manifest and generated icons, so it can
+              be added to a home screen — which is what iOS requires before it
+              will deliver Web Push at all — and notifications vibrate with a
+              distinct two-short-one-long pattern shared by the monitor, the
+              strip and the service worker. The icons are not artwork of unknown
+              origin: <code>tools/make-icons.mjs</code> rasterises the infield
+              diamond with all three bases from the site's own CSS tokens using
+              only arithmetic and <code>node:zlib</code>, and
+              <code>tools/icons-test.mjs</code> — 153 installability checks —
+              decodes every committed PNG (signature, per-chunk CRC-32, inflated
+              scanlines), re-renders it and requires the pixels to match, checks
+              the maskable variants keep their art inside the safe zone, and
+              fails if the service worker's buzz and the rules engine's buzz
+              disagree.
+            </li>
+            <li>
+              <span class="doc-badge ok">Shipped</span>
               <strong>Always-on watching without a browser</strong> (the number
               one limitation above). <code>tools/watcher.mjs</code> is one
               dependency-free file that requires the site's rules engine
@@ -772,9 +798,10 @@
               delivers through a webhook or ntfy when configured. It reports a
               failed channel with its reason — never as delivered — and it never
               guesses from play text or event names. Covered by
-              <code>tools/watcher-test.mjs</code> (120 checks) in CI, including a
+              <code>tools/watcher-test.mjs</code> (159 checks) in CI, including a
               full encrypt → decrypt round trip of the bytes it posts for a
-              notification.
+              notification, the capped retry/backoff for transient push failures,
+              and the <code>--doctor</code> readiness report.
               <strong>Hosting it is a recipe now, not a research project:</strong>
               <code>deploy/</code> ships a hardened systemd unit, a Dockerfile and
               compose file (unprivileged user, read-only root, volume-backed state)

@@ -190,6 +190,21 @@ WATCHER_LOG_DIR=/var/lib/loaded-late node deploy/healthcheck.mjs
   finish (the watcher prints `schedule unavailable … will retry` and keeps going) — that line, not
   the exit code, is where an outage is visible. This guide will not claim otherwise.
 
+The gap the healthcheck leaves is exactly what `--doctor` closes, so run both:
+
+```bash
+node tools/watcher.mjs --doctor     # alias: --check
+```
+
+It proves upstream reachability by reading today's America/New_York slate, proves the log
+directory and the dedup state file are writable (with a probe file it removes again), and
+reports every delivery channel as configured, half-configured — a hard failure, because a
+half-configured channel looks identical to one that works — or deliberately off. Exit code
+is 0 only when nothing failed, so it slots into cron or a deploy script as a gate. The
+companion commands `--list-subscriptions` (each stored device, masked, with a verdict and a
+reason) and `--prune-subscriptions` (remove rows that can never deliver) cover the store
+without reaching for `jq`.
+
 For a service deployment, "no alerts" is not the same as "no situation": confirm the watcher is
 running *and* completing cycles (`journalctl` shows a `watched N/M games` line each cycle unless
 `WATCHER_QUIET=1` is set) before trusting the silence.

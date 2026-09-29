@@ -98,6 +98,21 @@ const PUBLISHED_FILES = [
   "sw.js",
   "assets/css/bases-loaded.css",
   "assets/css/bases-loaded-strip.css",
+  "manifest.webmanifest",
+];
+
+/**
+ * The install assets. These are checked for presence (200 + non-empty) rather
+ * than byte-identity: two of them are PNG, and this client reads responses as
+ * text, so a binary byte-compare would compare mojibake rather than bytes. The
+ * bytes themselves are pinned by tools/icons-test.mjs against the generator.
+ */
+const INSTALL_ASSETS = [
+  "assets/icons/icon-192.png",
+  "assets/icons/icon-512.png",
+  "assets/icons/maskable-512.png",
+  "assets/icons/apple-touch-icon.png",
+  "assets/icons/favicon.svg",
 ];
 
 /**
@@ -201,6 +216,18 @@ async function assess(state) {
       `${asset} is served from the published site (${result.status})`,
     );
   }
+
+  for (const asset of INSTALL_ASSETS) {
+    const result = await get(asset);
+    ok(
+      result.status === 200 && (result.body || "").length > 0,
+      `${asset} is served from the published site (${result.status})`,
+    );
+  }
+  ok(
+    flat(index.body).includes('rel="manifest" href="manifest.webmanifest"'),
+    "the published monitor still links its install manifest",
+  );
 
   /* ----------------- the published bytes are this repository's bytes ------- */
 

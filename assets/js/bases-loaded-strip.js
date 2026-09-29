@@ -352,7 +352,7 @@
         `${demo ? "DEMO · " : ""}Tied. Bases loaded. Bottom ${event.inning}.${
           event.tension >= 4 ? ` 🔥 ${event.tensionLabel}` : ""
         }`,
-        { body: context, tag: event.id },
+        { body: context, tag: event.id, vibrate: [...(rules?.vibratePattern || [])] },
       );
       notice.onclick = () => {
         notice.close();
@@ -626,6 +626,15 @@
               ? `<span class="ll-row-note">loaded on: ${escape(s.result.lastEvent)}</span>`
               : ""
           }
+          ${
+            s.result.onDeck || s.result.inHole
+              ? `<span class="ll-row-note">due up: ${escape(
+                  [s.result.onDeck?.name, s.result.inHole?.name]
+                    .filter(Boolean)
+                    .join(" → "),
+                )}</span>`
+              : ""
+          }
           <a class="ll-row-link" href="game.html?gamePk=${encodeURIComponent(
             s.game.gamePk,
           )}">open game ↗</a>
@@ -688,6 +697,12 @@
                   : ""
               }${s.result.batter ? ` · ${s.result.batter.name}` : ""}${
                 s.result.pitcher ? ` vs ${s.result.pitcher.name}` : ""
+              }${
+                [s.result.onDeck?.name, s.result.inHole?.name].filter(Boolean).length
+                  ? ` · due up: ${[s.result.onDeck?.name, s.result.inHole?.name]
+                      .filter(Boolean)
+                      .join(" → ")}`
+                  : ""
               }`,
             )}</div>
             <div class="ll-toast-tension ll-tension-${s.result.tension}">TENSION ${escape(

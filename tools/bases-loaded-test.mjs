@@ -516,6 +516,7 @@ const alertEntry = {
   batter: { id: 9, name: "Batter, Jr." },
   pitcher: { id: 7, name: 'P "Q"' },
   onDeck: { id: 10, name: "Next Up" },
+  inHole: { id: 11, name: "In The Hole" },
   away: "Visitors",
   home: "Home",
   observedAt: Date.parse("2026-09-29T05:41:00Z"),
@@ -544,9 +545,9 @@ check(
   "All three runners are exported by base",
 );
 check(
-  [record.batter, record.pitcher, record.onDeck],
-  ["Batter, Jr.", 'P "Q"', "Next Up"],
-  "Matchup is exported without markup",
+  [record.batter, record.pitcher, record.onDeck, record.inHole],
+  ["Batter, Jr.", 'P "Q"', "Next Up", "In The Hole"],
+  "Matchup and due-up order are exported without markup",
 );
 check(record.observedAtIso, "2026-09-29T05:41:00.000Z", "Observation time is exported as ISO");
 
@@ -642,6 +643,87 @@ check(
   rules.historyFileName("anything", Date.parse("2026-09-29T05:41:00Z")).endsWith(".json"),
   true,
   "An unknown export kind falls back to JSON",
+);
+
+/* ------------------------------------------------ due-up context (in the hole)
+ * Verified against a live official payload on 2026-09-29 (game 849849): while
+ * the White Sox batted, `linescore.offense.{batter,onDeck,inHole}` were three
+ * White Sox and `linescore.defense.{batter,onDeck,inHole}` were the Astros' next
+ * three. The batting side is `offense`, so due-up must come from there — reading
+ * `defense.inHole` would name the fielding team's lineup as "due up".
+ */
+
+check(
+  rules.evaluate(
+    game({
+      offense: {
+        first: { id: 1, fullName: "First Runner" },
+        second: { id: 2, fullName: "Second Runner" },
+        third: { id: 3, fullName: "Third Runner" },
+        batter: { id: 9, fullName: "At Bat" },
+        onDeck: { id: 10, fullName: "On Deck" },
+        inHole: { id: 11, fullName: "In The Hole" },
+      },
+    }),
+  ).inHole,
+  { id: 11, name: "In The Hole" },
+  "evaluate reads the in-the-hole hitter from the batting side",
+);
+check(
+  rules.evaluate(
+    game({
+      offense: {
+        first: { id: 1 },
+        second: { id: 2 },
+        third: { id: 3 },
+        batter: { id: 9, fullName: "At Bat" },
+        // A defensive-side inHole must NOT leak into the due-up list.
+      },
+      defense: { pitcher: { id: 7, fullName: "Pitcher" }, inHole: { id: 99, fullName: "Fielder Due" } },
+    }),
+  ).inHole,
+  null,
+  "A defensive inHole is never reported as due up",
+);
+check(
+  rules.evaluate(game()).inHole,
+  null,
+  "No inHole in the feed yields null, never a placeholder",
+);
+const dueObservation = rules.observe(
+  {},
+  game({
+    offense: {
+      first: { id: 1 },
+      second: { id: 2 },
+      third: { id: 3 },
+      batter: { id: 9, fullName: "At Bat" },
+      onDeck: { id: 10, fullName: "On Deck" },
+      inHole: { id: 11, fullName: "In The Hole" },
+    },
+  }),
+  1_700_000_000_000,
+);
+check(
+  [dueObservation.event.onDeck?.name, dueObservation.event.inHole?.name],
+  ["On Deck", "In The Hole"],
+  "An alert event carries the due-up order so cards and exports can show it",
+);
+check(
+  rules.historyColumns.includes("inHole") &&
+    rules.historyColumns.indexOf("inHole") === rules.historyColumns.indexOf("onDeck") + 1,
+  true,
+  "The export column list carries inHole directly after onDeck",
+);
+check(
+  rules.historyCSV([alertEntry]).split("\r\n")[0].includes("inHole"),
+  true,
+  "The CSV header carries the inHole column",
+);
+check(
+  JSON.parse(rules.historyJSON([alertEntry])).alerts[0].inHole,
+  "In The Hole",
+  "The JSON export carries the inHole value",
 );
 
 check(

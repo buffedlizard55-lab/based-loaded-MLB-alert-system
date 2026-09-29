@@ -1,0 +1,38 @@
+{
+  "name": "Loaded Late — tied, bases-loaded MLB alerts",
+  "short_name": "Loaded Late",
+  "description": "Alerts when any MLB game is tied with all three bases occupied in the bottom of the 9th inning or any later inning — the walk-off condition in Official Baseball Rules 5.08(b).",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e1415",
+  "theme_color": "#0e1415",
+  "categories": ["sports"],
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "assets/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
