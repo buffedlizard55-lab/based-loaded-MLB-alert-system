@@ -293,15 +293,27 @@ console.log('\n== schedule hydrate=review ==');
 try {
   const sched = await getJSON(`${V1}/schedule?sportId=1&date=${date}&hydrate=review`);
   const list = sched.dates && sched.dates[0] ? sched.dates[0].games : [];
-  // Only games that have started must carry the counters; a pre-game slate has
-  // nothing to count yet and MLB omits the hydration for those games.
-  const started = list.filter((g) => g.status && startedStates.has(g.status.abstractGameState));
+  // Which started games must carry the counters? The ones that were actually
+  // played. A postponed / cancelled / suspended game is reported by the API
+  // with an abstractGameState of Live or Final but was never played, so it has
+  // nothing to count — and the app's consumer of this hydration
+  // (reviews-feed.js) already skips an entry without a review object.
+  const nonPlay = /postponed|cancel|suspend|delay|warmup|no game|not started/i;
+  const started = list.filter((g) =>
+    g.status && startedStates.has(g.status.abstractGameState) &&
+    !nonPlay.test(g.status.detailedState || ''));
+  const skipped = list.length - started.length;
+  if (skipped)
+    console.log(`  (${skipped} game(s) on this slate were not played — excluded from review hydration)`);
   const bad = started.filter((g) => !g.review || !g.review.away || typeof g.review.away.used !== 'number');
   if (started.length)
-    check('every started game carries review.away/home.used/remaining', bad.length === 0,
-      `${bad.length} of ${started.length} started games missing review hydration`);
+    check('every played game carries review.away/home.used/remaining', bad.length === 0,
+      bad.length
+        ? `${bad.length} of ${started.length} played games missing review hydration: ` +
+          bad.slice(0, 3).map((g) => `${g.gamePk} "${g.status.detailedState}"`).join(', ')
+        : `${started.length} played games`);
   else
-    console.log('  (no started games on this slate — skipped: review hydration)');
+    console.log('  (no played games on this slate — skipped: review hydration)');
 } catch (err) {
   check('schedule hydrate=review fetched', false, err.message);
 }
