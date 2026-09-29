@@ -1,0 +1,34 @@
+[Unit]
+Description=Loaded Late — always-on MLB tied/bases-loaded/bottom-9+ watcher
+Documentation=https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/verification.html
+# The watcher polls the public MLB StatsAPI; wait for a usable network first.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Run from the checkout so tools/watcher.mjs finds assets/js/bases-loaded-core.js
+# (the watcher requires the site's rules engine verbatim, by relative path).
+WorkingDirectory=/opt/loaded-late
+ExecStart=/usr/bin/env node tools/watcher.mjs
+# Secrets and phone-push settings live outside the unit file: copy
+# loaded-late-watcher.env.example to /etc/loaded-late/watcher.env and edit it.
+EnvironmentFile=-/etc/loaded-late/watcher.env
+# Optional hardening: the watcher only needs to write its own data directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# Do not run as root: create a service account first (see docs/watcher-deployment.md).
+User=loaded-late
+Group=loaded-late
+# Upstream hiccups are expected; the watcher already retries internally, and
+# this makes a crash (or a machine waking from sleep) resume watching.
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=loaded-late-watcher
+
+[Install]
+WantedBy=multi-user.target

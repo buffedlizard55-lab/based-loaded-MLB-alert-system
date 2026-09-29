@@ -258,6 +258,7 @@ for (const suite of [
   "tools/bases-loaded-monitor-test.mjs",
   "tools/bases-loaded-strip-test.mjs",
   "tools/watcher-test.mjs",
+  "tools/watcher-deploy-test.mjs",
   "tools/site-links-test.mjs",
 ])
   ok(smokeWorkflow.includes(suite), `CI runs ${suite}`);
@@ -321,6 +322,28 @@ for (const [file, label] of [
 ok(
   exists("tools/watcher.mjs") && exists("tools/watcher-test.mjs"),
   "The always-on watcher and its suite ship together",
+);
+// Deployment recipes are only useful if they ship, are documented, and stay in
+// step with the watcher's settings — the deployment suite is what keeps them
+// honest, so its presence and its CI wiring are part of site integrity.
+for (const recipe of [
+  "deploy/loaded-late-watcher.service",
+  "deploy/loaded-late-watcher.env.example",
+  "deploy/Dockerfile",
+  "deploy/docker-compose.yml",
+  "deploy/com.loadedlate.watcher.plist",
+  "deploy/healthcheck.mjs",
+  "tools/watcher-deploy-test.mjs",
+])
+  ok(exists(recipe), `${recipe} ships with the watcher it deploys`);
+ok(
+  exists("docs/watcher-deployment.md") &&
+    read("docs/watcher-deployment.md").includes("deploy/Dockerfile"),
+  "The deployment guide documents the recipes it ships",
+);
+ok(
+  read(".dockerignore").split("\n").some((line) => line.trim() === ".git"),
+  ".dockerignore keeps the repository history out of a published image context",
 );
 ok(
   read("tools/watcher.mjs").includes("bases-loaded-core.js"),

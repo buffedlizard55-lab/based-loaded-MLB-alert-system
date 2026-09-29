@@ -1,0 +1,41 @@
+# Loaded Late watcher — docker compose recipe.
+#
+#   cp deploy/loaded-late-watcher.env.example deploy/.env   # then edit it
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose -f deploy/docker-compose.yml logs -f
+#
+# The build context is the repository root on purpose: the watcher requires
+# assets/js/bases-loaded-core.js, the site's own rules engine.
+
+services:
+  watcher:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: loaded-late-watcher:local
+    restart: unless-stopped
+    env_file:
+      # All optional. Without the file the watcher still runs and logs alerts.
+      - path: .env
+        required: false
+    environment:
+      # The named volume below is mounted here, so the alert log and the dedup
+      # state survive `docker compose down` / host reboots.
+      WATCHER_LOG_DIR: /data
+      WATCHER_QUIET: "1"
+    volumes:
+      - watcher-data:/data
+    # The watcher needs no inbound ports and no capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  watcher-data:

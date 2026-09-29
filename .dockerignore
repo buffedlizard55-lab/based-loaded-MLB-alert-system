@@ -1,0 +1,8 @@
+# Build context for deploy/Dockerfile (the watcher image needs only two files).
+# Keeping these out makes the context tiny and avoids copying anything private.
+.git
+.github
+node_modules
+data
+deploy/.env
+*.log

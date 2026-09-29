@@ -36,6 +36,9 @@ jobs:
       - name: Validate the always-on watcher (same rules, no browser)
         run: node tools/watcher-test.mjs
 
+      - name: Validate the watcher deployment recipes
+        run: node tools/watcher-deploy-test.mjs
+
       - name: Validate the static site (links, claims, wiring)
         run: node tools/site-links-test.mjs
 
