@@ -6,7 +6,7 @@
     <title>Loaded Late — MLB situation alerts</title>
     <meta
       name="description"
-      content="One situation. Every MLB game. Alerts for tied games with bases loaded in the bottom of the ninth or any later inning."
+      content="One situation. Every MLB game. Alerts for tied games with bases loaded in the bottom of the ninth or any later inning. Tracks count, batter, pitcher, and tension level."
     />
     <link rel="stylesheet" href="assets/css/style.css" />
     <link rel="stylesheet" href="assets/css/bases-loaded.css" />
@@ -36,11 +36,11 @@
           <p class="hero-description">
             The situation worth waiting for. We watch every game and flag the
             moment all three bases are occupied in a tied, late-inning bottom
-            half.
+            half. Now with real-time count, batter/pitcher, and tension tracking.
           </p>
           <div class="rule-chips">
             <span>Equal scores</span><b>+</b><span>3 occupied bases</span
-            ><b>+</b><span>Bottom 9+</span>
+            ><b>+</b><span>Bottom 9+</span><b>=</b><span class="chip-alert">ALERT</span>
           </div>
         </div>
         <div
@@ -104,6 +104,10 @@
           <span>BASES-LOADED NOW</span><strong id="active-count">—</strong
           ><small>Exact situation matched</small>
         </div>
+        <div class="metric-tension">
+          <span>MAX TENSION</span><strong id="tension-count">—</strong
+          ><small>2 outs · full count · loaded</small>
+        </div>
         <div>
           <span>ALERTS SAVED</span><strong id="history-count">0</strong
           ><small>This browser · last 7 days</small>
@@ -144,21 +148,24 @@
                 <strong>Enter the watch window</strong>
                 <p>
                   A tied game reaches the changeover into the bottom of the 9th
-                  or any later inning.
+                  or any later inning — 9th, 10th, 11th, 12th, 13th, 14th, and
+                  beyond.
                 </p>
               </li>
               <li>
                 <strong>Watch the bases</strong>
                 <p>
                   We check the official runners on first, second and third. One
-                  out, two outs, no outs — all count.
+                  out, two outs, no outs — all count. The count, batter, and
+                  pitcher are tracked in real time.
                 </p>
               </li>
               <li>
                 <strong>Get the alert</strong>
                 <p>
-                  All three occupied, still tied, bottom 9+? An alert appears.
-                  Sound and notifications are optional.
+                  All three occupied, still tied, bottom 9+? An alert fires with
+                  full context: the count, the matchup, and a tension rating
+                  from baseline to maximum.
                 </p>
               </li>
             </ol>
@@ -169,14 +176,32 @@
           <details class="coverage" open>
             <summary>Every route to loaded bases</summary>
             <p>
-              Hits, walks, intentional walks, hit-by-pitches, errors, fielder’s
-              choices, interference, an uncaught third strike, runner advances,
-              placed runners in extras and official corrections.
+              Hits, walks, intentional walks, hit-by-pitches, errors, fielder's
+              choices, interference, catcher's interference, an uncaught third
+              strike, runner advances on wild pitches or passed balls, fielder's
+              obstruction, placed runners in extras (ghost runner + walks or
+              hits), and official corrections.
             </p>
             <p>
               No keyword guessing: the official base occupancy decides. A tying
               play that leaves the bases loaded also qualifies. There is no
-              upper inning limit.
+              upper inning limit — bottom 9, 10, 11, 12, 13, 14, 15, 16,
+              and beyond all count equally.
+            </p>
+          </details>
+          <details class="coverage">
+            <summary>Tension rating explained</summary>
+            <p>
+              Each alert carries a tension score from 0 to 5, based on the
+              combination of outs and the current count:
+            </p>
+            <p>
+              <strong>Outs:</strong> 0 outs (+1) · 1 out (+2) · 2 outs (+3)<br>
+              <strong>Count:</strong> full count 3-2 (+2) · 2-strike or 3-ball (+1)
+            </p>
+            <p>
+              A bases-loaded alert at 2 outs with a 3-2 count is maximum tension
+              (5) — one pitch can end the game.
             </p>
           </details>
         </aside>

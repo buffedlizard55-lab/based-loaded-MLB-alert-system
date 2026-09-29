@@ -1,10 +1,12 @@
-/* Alert-only monitor. Schedule discovery is separate from coherent live snapshots. */
+/* Alert-only monitor. Schedule discovery is separate from coherent live snapshots.
+ * Enhanced: displays count, batter/pitcher, tension level, and base-loading context.
+ */
 "use strict";
 (() => {
   const $ = (id) => document.getElementById(id);
   const rules = BasesLoadedRules;
   const demo = new URLSearchParams(location.search).get("demo") === "1";
-  const STORE = "loaded-late:v2",
+  const STORE = "loaded-late:v3",
     PREFS = "loaded-late:preferences";
   const WEEK = 7 * 86400000,
     DISCOVERY_MS = 15000,
@@ -45,9 +47,36 @@
     });
   const empty = (title, text, icon = "◇") =>
     `<div class="alert-empty"><span class="empty-icon">${icon}</span><strong>${escape(title)}</strong>${escape(text)}</div>`;
+
+  // Format count as "B-S" (balls-strikes)
+  const countDisplay = (balls, strikes) => {
+    if (balls == null || strikes == null) return "—";
+    return `${balls}–${strikes}`;
+  };
+
+  // Count dots visual: ● for present, ○ for absent
+  const countDots = (value, max) => {
+    if (value == null) return "";
+    let s = "";
+    for (let i = 0; i < max; i++) s += i < value ? "●" : "○";
+    return s;
+  };
+
+  // Tension bar: visual indicator 0-5
+  const tensionBar = (level) => {
+    let s = "";
+    for (let i = 0; i < 5; i++) {
+      s += i < level
+        ? `<span class="tension-pip filled${level >= 4 ? " extreme" : ""}"></span>`
+        : `<span class="tension-pip"></span>`;
+    }
+    return s;
+  };
+
   function feedback(message) {
     $("feedback").textContent = message;
   }
+
   function restore() {
     if (demo) return;
     try {
@@ -74,13 +103,13 @@
       );
       const prefs = JSON.parse(localStorage.getItem(PREFS) || "{}");
       notificationsEnabled = prefs.notifications === true;
-      // Sound needs a fresh user gesture to unlock AudioContext each session.
     } catch (_) {
       feedback(
         "Browser storage unavailable or invalid. Alerts will still work for this session.",
       );
     }
   }
+
   function save() {
     history = history
       .filter((e) => e.observedAt > Date.now() - WEEK)
@@ -99,6 +128,7 @@
       );
     }
   }
+
   function updateNotificationButton() {
     const supported = "Notification" in window;
     if (!supported || Notification.permission !== "granted")
@@ -112,6 +142,7 @@
           : "Enable notifications";
     $("notify").setAttribute("aria-pressed", String(notificationsEnabled));
   }
+
   async function chime() {
     if (!soundEnabled || !audio) return;
     try {
@@ -137,6 +168,7 @@
       feedback("Audio was blocked. Turn sound off and on to try again.");
     }
   }
+
   function announce(event) {
     if (
       notificationsEnabled &&
@@ -144,12 +176,21 @@
       Notification.permission === "granted"
     ) {
       try {
+        const countStr =
+          event.balls != null && event.strikes != null
+            ? `${event.balls}-${event.strikes}`
+            : "";
+        const batterStr = event.batter?.name || "";
+        const body = [
+          `${event.away} at ${event.home} · ${event.awayScore}–${event.homeScore}`,
+          `${event.outs} out${event.outs === 1 ? "" : "s"}${countStr ? ` · ${countStr} count` : ""}`,
+          batterStr ? `Batter: ${batterStr}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
         const notice = new Notification(
-          `${demo ? "DEMO · " : ""}Tied. Bases loaded. Bottom ${event.inning}.`,
-          {
-            body: `${event.away} at ${event.home} · ${event.awayScore}–${event.homeScore} · ${event.outs} out${event.outs === 1 ? "" : "s"}`,
-            tag: event.id,
-          },
+          `${demo ? "DEMO · " : ""}Tied. Bases loaded. Bottom ${event.inning}.${event.tension >= 4 ? " 🔥 " + event.tensionLabel : ""}`,
+          { body, tag: event.id },
         );
         notice.onclick = () => {
           window.focus();
@@ -162,6 +203,7 @@
       }
     }
   }
+
   function accept(game, now) {
     const observation = rules.observe(states[game.gamePk], game, now);
     if (observation.state) states[game.gamePk] = observation.state;
@@ -178,6 +220,7 @@
     announce(observation.event);
     return true;
   }
+
   function card(game, result, options = {}) {
     const { historical, stamp, error } = options;
     const isLoaded = result.loaded && !error;
@@ -191,16 +234,106 @@
               `<span class="${runner ? "occupied" : ""}" title="${escape(runner?.name || "Empty")}">${i + 1}B ${runner ? "●" : "○"}</span>`,
           )
           .join("");
-    return `<article class="alert-card ${historical ? "history-card" : isLoaded ? "loaded" : ""}">
-      <div class="card-top"><span class="card-badge">${historical ? "OBSERVED BASES LOADED" : error ? "DATA UNCONFIRMED" : isLoaded ? "● BASES LOADED · ALERT" : "◉ ON WATCH"}</span><span class="card-time">${historical ? escape(new Date(stamp).toLocaleDateString([], { month: "short", day: "numeric" })) + " · " : ""}${escape(time(stamp))}</span></div>
+
+    // Count display
+    const countHTML =
+      result.balls != null && result.strikes != null
+        ? `<div class="card-count">
+            <span class="count-label">COUNT</span>
+            <span class="count-value">${escape(countDisplay(result.balls, result.strikes))}</span>
+            <span class="count-dots">
+              <span class="count-balls" title="Balls">${countDots(result.balls, 4)}</span>
+              <span class="count-strikes" title="Strikes">${countDots(result.strikes, 3)}</span>
+            </span>
+          </div>`
+        : "";
+
+    // Outs display
+    const outsHTML =
+      result.outs != null
+        ? `<div class="card-outs">
+            <span class="outs-label">OUTS</span>
+            <span class="outs-value">${result.outs}</span>
+            <span class="outs-dots">${countDots(result.outs, 3)}</span>
+          </div>`
+        : "";
+
+    // Tension display
+    const tensionHTML =
+      isLoaded && result.tension != null
+        ? `<div class="card-tension tension-${result.tension}">
+            <span class="tension-label">TENSION</span>
+            <span class="tension-bar">${tensionBar(result.tension)}</span>
+            <span class="tension-text ${result.tension >= 4 ? "extreme" : ""}">${escape(result.tensionLabel)}</span>
+          </div>`
+        : "";
+
+    // Batter/pitcher display
+    const matchupHTML =
+      (result.batter || result.pitcher) && (isLoaded || result.watching)
+        ? `<div class="card-matchup">
+            ${result.batter ? `<span class="matchup-batter" title="Current batter">⚾ ${escape(result.batter.name)}</span>` : ""}
+            ${result.pitcher ? `<span class="matchup-pitcher" title="Current pitcher">🎯 ${escape(result.pitcher.name)}</span>` : ""}
+            ${result.onDeck ? `<span class="matchup-ondeck" title="On deck">↗ ${escape(result.onDeck.name)}</span>` : ""}
+          </div>`
+        : "";
+
+    // Last event description (context for how we got here)
+    const eventHTML =
+      result.lastEvent && (isLoaded || result.watching)
+        ? `<div class="card-event"><span class="event-label">LAST PLAY:</span> ${escape(result.lastEvent)}</div>`
+        : "";
+
+    // Watch context: how many runners on
+    const watchContext =
+      !isLoaded && !historical && result.watching && !result.entering
+        ? `<div class="card-watch-context">
+            <span>${result.runnersOn} runner${result.runnersOn === 1 ? "" : "s"} on · ${3 - result.runnersOn} base${3 - result.runnersOn === 1 ? "" : "s"} to fill</span>
+          </div>`
+        : "";
+
+    // Build badge text
+    let badgeText;
+    if (historical) badgeText = "OBSERVED BASES LOADED";
+    else if (error) badgeText = "DATA UNCONFIRMED";
+    else if (isLoaded) badgeText = `● BASES LOADED · ALERT${result.tension >= 5 ? " · MAX TENSION" : ""}`;
+    else badgeText = "◉ ON WATCH";
+
+    // History card: show saved runners with batter/pitcher if available
+    const historyDetailHTML = historical
+      ? `<div class="history-details">
+          ${result.bases.map((r, i) => `${i + 1}B: ${escape(r?.name || "Runner")}`).join(" · ")}
+          ${result.batter ? `<br>Batter: ${escape(result.batter.name)}` : ""}
+          ${result.pitcher ? ` · Pitcher: ${escape(result.pitcher.name)}` : ""}
+          ${result.balls != null && result.strikes != null ? `<br>Count: ${escape(countDisplay(result.balls, result.strikes))}` : ""}
+          ${result.tension != null ? ` · Tension: ${escape(result.tensionLabel)}` : ""}
+        </div>`
+      : "";
+
+    return `<article class="alert-card ${historical ? "history-card" : isLoaded ? "loaded" : ""} ${isLoaded && result.tension >= 5 ? "max-tension" : ""}">
+      <div class="card-top">
+        <span class="card-badge">${badgeText}</span>
+        <span class="card-time">${historical ? escape(new Date(stamp).toLocaleDateString([], { month: "short", day: "numeric" })) + " · " : ""}${escape(time(stamp))}</span>
+      </div>
       <h3>${escape(away)} <span style="color:#85958a">at</span> ${escape(home)}</h3>
       <div class="card-score">${escape(result.away)} – ${escape(result.home)}<span>${result.tied ? "TIED" : ""} · ${result.entering ? "ENTERING BOT" : "BOT"} ${escape(result.inning)}</span></div>
-      <p>${result.entering ? "Changeover — waiting for the home half. No alert yet." : `${escape(result.outs)} out${result.outs === 1 ? "" : "s"} · ${isLoaded || historical ? "Runners on first, second and third" : "Watching for all three bases to fill"}`}</p>
+      ${tensionHTML}
+      <div class="card-situation">
+        ${outsHTML}
+        ${countHTML}
+      </div>
+      ${matchupHTML}
+      ${eventHTML}
+      ${watchContext}
       ${error ? `<p class="stale-note">${escape(error)}. Last observed state, not a current alert.</p>` : ""}
-      <div class="card-footer"><div class="mini-bases" aria-label="Base occupancy">${bases}</div>${demo ? '<span class="card-time">Synthetic game</span>' : `<a href="game.html?gamePk=${encodeURIComponent(game.gamePk)}">Open game ↗</a>`}</div>
-      ${historical ? `<p>${result.bases.map((r, i) => `${i + 1}B: ${escape(r?.name || "Runner")}`).join(" · ")}</p>` : ""}
+      <div class="card-footer">
+        <div class="mini-bases" aria-label="Base occupancy">${bases}</div>
+        ${demo ? '<span class="card-time">Synthetic game</span>' : `<a href="game.html?gamePk=${encodeURIComponent(game.gamePk)}">Open game ↗</a>`}
+      </div>
+      ${historyDetailHTML}
     </article>`;
   }
+
   function render() {
     const entries = [...snapshots.values()];
     const current = entries.filter((s) => s.result.loaded && !s.error);
@@ -208,11 +341,20 @@
       (s) => s.result.watching && !s.result.loaded && !s.error,
     );
     const unconfirmed = entries.filter((s) => s.error);
+
     $("games-count").textContent = discoveryAt || demo ? games.size : "—";
     $("watch-count").textContent =
       discoveryAt || demo ? current.length + watching.length : "—";
     $("active-count").textContent = discoveryAt || demo ? current.length : "—";
     $("history-count").textContent = history.length;
+
+    // Tension summary: count max-tension alerts
+    const maxTensionCount = current.filter((s) => s.result.tension >= 5).length;
+    if ($("tension-count")) {
+      $("tension-count").textContent =
+        discoveryAt || demo ? maxTensionCount : "—";
+    }
+
     $("current").innerHTML = current.length
       ? current.map((s) => card(s.game, s.result, { stamp: s.at })).join("")
       : empty(
@@ -223,6 +365,7 @@
             ? "Some MLB data is unavailable. We will retry automatically; no all-clear is implied."
             : "When the exact situation appears, it will be highlighted here.",
         );
+
     $("watch").innerHTML =
       watching.map((s) => card(s.game, s.result, { stamp: s.at })).join("") +
         unconfirmed
@@ -237,8 +380,9 @@
           : "Waiting for a tied late-inning game",
         current.length
           ? "Matching games are shown in Live alerts above."
-          : "The watch starts at the changeover into bottom 9, 10, 11 and beyond.",
+          : "The watch begins when a tied game enters the bottom of the 9th or any later inning.",
       );
+
     $("history").innerHTML = history.length
       ? history
           .map((e) =>
@@ -256,6 +400,14 @@
                 away: e.awayScore,
                 home: e.homeScore,
                 outs: e.outs,
+                balls: e.balls,
+                strikes: e.strikes,
+                batter: e.batter,
+                pitcher: e.pitcher,
+                onDeck: e.onDeck,
+                tension: e.tension,
+                tensionLabel: e.tensionLabel,
+                lastEvent: e.lastEvent,
                 loaded: true,
                 tied: true,
                 entering: false,
@@ -269,12 +421,14 @@
           "Only exact matches are saved. Repeated polls do not create duplicate alerts.",
           "↳",
         );
+
     const connecting = !demo && !discoveryAt && !scheduleError;
     if (connecting)
       $("current").innerHTML = empty(
         "Checking the official MLB schedule…",
         "Live status has not been confirmed yet.",
       );
+
     const paused = document.hidden;
     $("status").textContent = demo
       ? "Demo mode · live polling off"
@@ -292,10 +446,16 @@
     $("updated").textContent = demo
       ? "Step through the scenarios below"
       : `${lastUpdate ? `Last live scan ${time(lastUpdate)}` : "Waiting for official data"} · ${scheduleError || "Schedule 15s / late innings 2s"}`;
-    document.title = current.length
-      ? `(${current.length}) BASES LOADED — Loaded Late`
-      : "Loaded Late — MLB situation alerts";
+
+    // Dynamic title with tension info
+    if (current.length) {
+      const maxT = current.filter((s) => s.result.tension >= 5).length;
+      document.title = `(${current.length}) BASES LOADED${maxT ? " · " + maxT + " MAX TENSION" : ""} — Loaded Late`;
+    } else {
+      document.title = "Loaded Late — MLB situation alerts";
+    }
   }
+
   async function discover() {
     const dates = rules.scheduleDates();
     if (
@@ -327,6 +487,7 @@
       scheduleError = "Schedule unavailable — discovery will retry";
     }
   }
+
   async function poll(force = false) {
     if (demo || busy || document.hidden) return;
     clearTimeout(timer);
@@ -346,12 +507,10 @@
       for (const [pk, game] of games) {
         if (!targetIds.has(pk)) {
           snapshots.delete(pk);
-          // Schedule can confirm a final game, but never assert live base occupancy.
           if (game.status?.abstractGameState === "Final" && states[pk])
             states[pk].active = false;
         }
       }
-      // Limit concurrent requests, including on a full MLB slate.
       let cursor = 0;
       async function worker() {
         while (cursor < targets.length && !document.hidden) {
@@ -376,7 +535,7 @@
       await Promise.all(
         Array.from({ length: Math.min(4, targets.length) }, worker),
       );
-      if (newAlert) chime(); // One chime per scan even if several games qualify.
+      if (newAlert) chime();
       if (!document.hidden) lastUpdate = Date.now();
       save();
       render();
@@ -389,6 +548,7 @@
       if (!document.hidden) timer = setTimeout(() => poll(), SCAN_MS);
     }
   }
+
   $("sound").addEventListener("click", async () => {
     try {
       if (!soundEnabled) {
@@ -408,6 +568,7 @@
       feedback("Sound is not supported or was blocked by your browser.");
     }
   });
+
   $("notify").addEventListener("click", async () => {
     if (!("Notification" in window)) {
       feedback(
@@ -425,7 +586,7 @@
         notificationsEnabled
           ? "Notifications enabled for this monitor while it is running."
           : Notification.permission === "denied"
-            ? "Notifications are blocked. Change this site’s permission in browser settings to enable them."
+            ? "Notifications are blocked. Change this site's permission in browser settings to enable them."
             : "Desktop notifications are off. On-page alerts still work.",
       );
       if (!demo) {
@@ -442,22 +603,25 @@
       );
     }
   });
+
   $("refresh").addEventListener("click", () => (demo ? render() : poll(true)));
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);
     if (document.hidden) {
-      // Do not leave stale green live alerts displayed when monitoring stops.
       for (const entry of snapshots.values()) entry.error = "Monitoring paused";
       render();
     } else if (!demo) poll(true);
     else showDemo(false);
   });
-  // Guided offline demo exercises the same rule engine, never touches live storage.
+
+  // Enhanced guided demo covering every bases-loaded path
   const demoSteps = [
     {
       inning: 9,
       state: "Top",
       outs: 2,
+      balls: 1,
+      strikes: 2,
       bases: [true, true, true],
       text: "Top 9, tied, bases loaded: deliberately NO alert. Only the home half qualifies.",
     },
@@ -465,61 +629,158 @@
       inning: 9,
       state: "Middle",
       outs: 3,
+      balls: 0,
+      strikes: 0,
       bases: [],
       text: "Top 9 ends tied. The game enters the watch window; stale top-half runners cannot trigger an alert.",
     },
     {
       inning: 9,
       state: "Bottom",
-      outs: 1,
+      outs: 0,
+      balls: 0,
+      strikes: 0,
+      bases: [false, false, false],
+      text: "Bottom 9 begins, tied. No runners. On watch, watching for any path to loaded bases.",
+    },
+    {
+      inning: 9,
+      state: "Bottom",
+      outs: 0,
+      balls: 4,
+      strikes: 0,
+      bases: [true, false, false],
+      batter: "J. Ramirez",
+      pitcher: "C. Sale",
+      text: "Leadoff walk — runner on first. One base filled via a four-pitch walk.",
+    },
+    {
+      inning: 9,
+      state: "Bottom",
+      outs: 0,
+      balls: 0,
+      strikes: 0,
       bases: [true, true, false],
-      text: "Bottom 9, tied, two runners. On watch, but no alert yet.",
+      batter: "A. Judge",
+      pitcher: "C. Sale",
+      text: "Single advances the runner. Runners on first and second. Hit is one path.",
     },
     {
       inning: 9,
       state: "Bottom",
       outs: 1,
-      bases: [true, true, true],
-      text: "A walk fills the bases. Exact match: alert, with an immutable score and runner snapshot.",
+      balls: 2,
+      strikes: 2,
+      bases: [true, true, false],
+      batter: "S. Ohtani",
+      pitcher: "C. Sale",
+      text: "Groundout advances runners to 2nd and 3rd, but first is now open. One out, not yet loaded.",
     },
     {
       inning: 9,
       state: "Bottom",
       outs: 1,
+      balls: 0,
+      strikes: 0,
       bases: [true, true, true],
-      text: "Same situation on the next poll: no duplicate alert.",
+      batter: "M. Trout",
+      pitcher: "C. Sale",
+      onDeck: "B. Harper",
+      lastEvent: "Intentional Walk",
+      text: "Intentional walk loads the bases! Exact match: alert fires. IBB is one of many paths to loaded bases.",
+    },
+    {
+      inning: 9,
+      state: "Bottom",
+      outs: 1,
+      balls: 0,
+      strikes: 0,
+      bases: [true, true, true],
+      batter: "M. Trout",
+      pitcher: "C. Sale",
+      text: "Same situation on the next poll: no duplicate alert. The system tracks continuity.",
     },
     {
       inning: 9,
       state: "Bottom",
       outs: 2,
+      balls: 3,
+      strikes: 2,
       bases: [false, true, true],
-      text: "A runner is picked off first. Still tied; the alert clears and re-arms.",
+      batter: "M. Trout",
+      pitcher: "C. Sale",
+      text: "Runner picked off first! Alert clears. Still tied, 3-2 count, 2 outs. Re-armed for a new load.",
     },
     {
       inning: 9,
       state: "Bottom",
       outs: 2,
+      balls: 3,
+      strikes: 2,
       bases: [true, true, true],
-      text: "An intentional walk reloads the bases: a new alert in the same inning.",
+      batter: "M. Trout",
+      pitcher: "C. Sale",
+      text: "Hit-by-pitch with the bases partially loaded reloads them! New alert, maximum tension: 2 outs, full count.",
     },
     {
       inning: 9,
       state: "Bottom",
       outs: 2,
-      bases: [true, true, true],
+      balls: 0,
+      strikes: 0,
+      bases: [false, false, false],
       home: 5,
       final: true,
-      text: "Walk-off. The home team leads and the game is final. Leftover runner data never triggers an alert.",
+      text: "Walk-off hit! The home team leads and the game is final. Leftover runner data never triggers an alert.",
+    },
+    {
+      inning: 10,
+      state: "Bottom",
+      outs: 0,
+      balls: 0,
+      strikes: 0,
+      bases: [true, false, false],
+      batter: "M. Betts",
+      pitcher: "J. Hader",
+      text: "Extra innings: bottom 10, tied. Placed runner starts on 2nd, reaches first on fielder's choice.",
+    },
+    {
+      inning: 10,
+      state: "Bottom",
+      outs: 0,
+      balls: 0,
+      strikes: 0,
+      bases: [true, true, false],
+      batter: "F. Freeman",
+      pitcher: "J. Hader",
+      lastEvent: "Wild Pitch",
+      text: "Wild pitch advances runners. Now on 1st and 2nd. WP is another path to filling the bases.",
+    },
+    {
+      inning: 10,
+      state: "Bottom",
+      outs: 0,
+      balls: 0,
+      strikes: 0,
+      bases: [true, true, true],
+      batter: "W. Smith",
+      pitcher: "J. Hader",
+      lastEvent: "Error",
+      text: "Fielding error loads the bases in bottom 10! Alert fires. Errors count — official occupancy decides.",
     },
     {
       inning: 14,
       state: "Bottom",
-      outs: 0,
+      outs: 1,
+      balls: 3,
+      strikes: 2,
       bases: [true, true, true],
-      text: "Separate extra-inning scenario: a placed runner plus two walks in bottom 14. No upper inning limit.",
+      batter: "C. Correa",
+      pitcher: "E. Diaz",
+      text: "Bottom 14, 2 walks + placed runner = loaded. Full count, one out. No upper inning limit exists.",
     },
   ];
+
   function showDemo(advance = true) {
     const step = demoSteps[demoStep];
     const game = {
@@ -537,18 +798,27 @@
         inningState: step.state,
         isTopInning: step.state === "Top",
         outs: step.outs,
+        balls: step.balls ?? 0,
+        strikes: step.strikes ?? 0,
         teams: { away: { runs: 4 }, home: { runs: step.home || 4 } },
         offense: Object.fromEntries(
-          ["first", "second", "third"].flatMap((base, i) =>
-            step.bases[i]
+          [
+            ["first", step.bases[0]],
+            ["second", step.bases[1]],
+            ["third", step.bases[2]],
+          ].flatMap(([base, occupied]) =>
+            occupied
               ? [
                   [
                     base,
                     {
-                      id: i + 1,
-                      fullName: ["Alex Runner", "Jordan Runner", "Sam Runner"][
-                        i
-                      ],
+                      id: { first: 11, second: 22, third: 33 }[base],
+                      fullName:
+                        {
+                          first: "Alex Runner",
+                          second: "Jordan Runner",
+                          third: "Sam Runner",
+                        }[base],
                     },
                   ],
                 ]
@@ -557,6 +827,31 @@
         ),
       },
     };
+
+    // Add batter/pitcher/onDeck if specified
+    if (step.batter) {
+      game.linescore.offense.batter = {
+        id: 100,
+        fullName: step.batter,
+      };
+    }
+    if (step.pitcher) {
+      game.linescore.defense = {
+        pitcher: { id: 200, fullName: step.pitcher },
+      };
+    }
+    if (step.onDeck) {
+      game.linescore.offense.onDeck = {
+        id: 150,
+        fullName: step.onDeck,
+      };
+    }
+    if (step.lastEvent) {
+      game.linescore.currentPlay = {
+        result: { event: step.lastEvent, description: step.lastEvent },
+      };
+    }
+
     games.set(game.gamePk, game);
     if (accept(game, Date.now()) && advance) chime();
     $("demo-description").textContent =
@@ -565,6 +860,7 @@
       demoStep === demoSteps.length - 1 ? "Restart demo ↺" : "Next scenario →";
     render();
   }
+
   $("demo-next").addEventListener("click", () => {
     demoStep = (demoStep + 1) % demoSteps.length;
     if (demoStep === 0) {
@@ -574,7 +870,8 @@
     }
     showDemo();
   });
-  // A slow request or rate-limit quiet period must not leave an old green alert live.
+
+  // Stale-snapshot watcher
   if (!demo)
     setInterval(() => {
       let changed = false;
@@ -586,6 +883,7 @@
       }
       if (changed) render();
     }, 2000);
+
   restore();
   updateNotificationButton();
   if (demo) {

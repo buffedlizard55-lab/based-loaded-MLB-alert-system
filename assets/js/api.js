@@ -262,11 +262,15 @@ const MLB = (() => {
   /** Coherent, lean snapshot for the narrow late-inning alert monitor.
    * Status and linescore come from one response, not independently timed polls.
    * Keep base identities: official occupancy is authoritative, not play text.
+   * Enhanced: includes count (balls/strikes), current batter/pitcher, and
+   * current play description for richer alert context.
    */
   async function getAlertSnapshot(gamePk, options = {}) {
     const fields = 'gamePk,gameData,status,abstractGameState,detailedState,statusCode,' +
       'liveData,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,' +
-      'offense,first,second,third,id,fullName';
+      'offense,defense,first,second,third,id,fullName,' +
+      'balls,strikes,batter,pitcher,onDeck,inHole,' +
+      'currentPlay,result,description,event,eventType,rbi,awayScore,homeScore';
     return getJSON(`${V11}/game/${gamePk}/feed/live?fields=${fields}`,
       { timeout: 5000, retries: 0, ...options });
   }
