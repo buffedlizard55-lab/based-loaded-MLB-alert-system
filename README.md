@@ -47,7 +47,7 @@ node tools/bases-loaded-monitor-test.mjs
 node tools/bases-loaded-strip-test.mjs
 ```
 
-These deterministic tests need neither external packages nor live MLB games. The guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, and bottom 14. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. Demo data never enters live history.
+These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. Demo data never enters live history.
 
 ## Deploy this copy
 

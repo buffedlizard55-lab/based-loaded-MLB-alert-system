@@ -35,11 +35,12 @@ Budget: two schedule requests (today and yesterday, America/New_York) every 30 s
 | Score becomes tied during a qualifying bottom half | Enter watch or alert immediately based on occupancy |
 | Bottom 8 or earlier (including a seven-inning game's bottom eighth) | Never alert |
 | Unequal scores, three outs / End, final / game over | No active alert; confirmed exits re-arm |
-| Delayed / suspended / postponed / cancelled | No active alert |
+| Delayed / suspended | No active alert during the pause; preserve the episode so resumption alone does not re-alert |
+| Postponed / cancelled | No active alert |
 | Missing score, inning, outs, offense, malformed runner, contradictory half-inning or unknown game status | Unconfirmed; never infer zero, tie or loaded bases; preserve prior dedup state |
 | Fetch failure / snapshot older than 12 seconds | Do not show it as live; retain saved history and dedup state |
 
-The rule requires nonnegative integer scores, a valid inning, explicit `Bottom`, and a valid positive player ID on each occupied base. It rejects `isTopInning: true` on a purported bottom-half snapshot. A missing base property inside a valid offense object means that base is unoccupied; a missing offense object is unknown.
+The rule requires nonnegative integer scores, a valid inning, explicit `Bottom`, and a valid positive player ID on each occupied base. Occupied bases must have distinct player IDs; offense must be an object, innings must be positive, and outs must be between zero and three. Contradictory half-inning flags are rejected in either direction. A missing base property inside a valid offense object means that base is unoccupied; a missing offense object is unknown.
 
 `Middle` and top-half third-out states allow the earliest observed changeover watch. `End` does not: that is the end of the home half. A tied bottom-half snapshot qualifies even if the monitor never observed the preceding changeover.
 
@@ -48,6 +49,7 @@ The rule requires nonnegative integer scores, a valid inning, explicit `Bottom`,
 There is deliberately **no event-description whitelist**. Hits, walks, intentional walks, hit-by-pitches, fielding errors, fielder's choices, catcher interference, obstruction, an uncaught third strike, runner advances, placed extra-inning runners and scorer/replay corrections all converge on the same official base-occupancy check.
 
 - A walk with first and second occupied can fill all three bases without changing the score.
+- Wild pitches, passed balls, steals and balks move existing runners; by themselves they cannot increase the number of occupied bases. An uncaught third strike can put a batter on only when the rules permit it (first base unoccupied, or two outs). A play label is never enough to trigger.
 - A fielder's choice can replace a runner while keeping the bases loaded. That remains one continuous situation, not a new alert.
 - A pinch runner changes player identity, not base occupancy; it does not retrigger.
 - An automatic runner on second is only one occupied base. Two additional runners must reach the other bases before an alert.
@@ -71,7 +73,7 @@ The field projection was checked against a real final-game response from [MLB ga
 
 A first observed matching snapshot creates an immutable record containing game ID, names, tied score, inning, outs, runner IDs/names, and local observation time. Records created by the site-wide strip are the same records: the dashboard and the strip write one shared log, so a game observed from the replay feed shows up in the monitor's history and vice versa. Repeated polls do not create new records. The dedup state is game-specific and inning-specific. A **confirmed** exit from the condition re-arms the next match; an error or incomplete snapshot does not. A new qualifying inning is a new situation even if the monitor missed the intervening exit.
 
-`localStorage['loaded-late:v2']` stores history and last observed dedup states. History retains up to 200 records within the past seven days. Restoring history never replays notifications. Original score/runner snapshots are never reconstructed from the game's current score. Storage failures do not disable live detection; the UI warns that persistence is unavailable.
+`localStorage['loaded-late:v3']` stores history and last observed dedup states. History retains up to 200 records within the past seven days. Restoring history never replays notifications. Original score/runner snapshots are never reconstructed from the game's current score. Storage failures do not disable live detection; the UI warns that persistence is unavailable.
 
 A fresh browser with no dedup state alerts on an already-active matching situation. The app does **not** invent episodes that may have cleared/reloaded while it was closed. Multiple open monitor tabs are independent and may both notify; keep one monitor tab open. History is local to this browser/origin, not the replay feed's backend log and not cross-device storage.
 
@@ -91,6 +93,6 @@ node tools/bases-loaded-monitor-test.mjs
 node tools/bases-loaded-strip-test.mjs
 ```
 
-Tests cover inning/half/score/outs boundaries, all eight occupancy combinations, all listed routes without keyword inference, changeovers, walk-offs, final/delay status, incomplete data, immutable snapshots, dedup/re-arm/refresh, API projection, Eastern midnight/DST, failed polls, hidden-tab pause/resume, stale-state expiry, overlapping refresh, storage failures, opt-in notifications and isolated demo mode. The strip suite adds the shared helpers (`scanTarget`, `pollCadence`, `recentSharedAlert`, `occupancyLabel`), the page-wiring contract (which pages mount the strip, which intentionally do not, and that `api.js` loads first), and a deterministic DOM/clock/API-stub run of the controller: watch line, partial occupancy, first alert, repeat polls, cleared-and-reloaded, extra innings 10–17, cross-page quiet window, fresh page load mid-situation, hidden-tab pause, cadence 30s/5s, stale and failed snapshots, blocked storage, a missing api client, dismissal and demo mode.
+Tests include an exhaustive 11,520-case matrix (innings 1–30 × four half-inning states × 0–3 outs × trailing/tied/leading × eight occupancy patterns), malformed/duplicate runner data, delay/resumption continuity, and cover inning/half/score/outs boundaries, all eight occupancy combinations, all listed routes without keyword inference, changeovers, walk-offs, final/delay status, incomplete data, immutable snapshots, dedup/re-arm/refresh, API projection, Eastern midnight/DST, failed polls, hidden-tab pause/resume, stale-state expiry, overlapping refresh, storage failures, opt-in notifications and isolated demo mode. The strip suite adds the shared helpers (`scanTarget`, `pollCadence`, `recentSharedAlert`, `occupancyLabel`), the page-wiring contract (which pages mount the strip, which intentionally do not, and that `api.js` loads first), and a deterministic DOM/clock/API-stub run of the controller: watch line, partial occupancy, first alert, repeat polls, cleared-and-reloaded, extra innings 10–17, cross-page quiet window, fresh page load mid-situation, hidden-tab pause, cadence 30s/5s, stale and failed snapshots, blocked storage, a missing api client, dismissal and demo mode.
 
-`/?demo=1` or `bases-loaded.html?demo=1` runs nine manually advanced synthetic scenarios using the production rule engine. No MLB requests or live-history writes occur. The labeled demo includes a bottom-14 loaded tie. Demo notifications require explicit opt-in and carry a DEMO prefix.
+`/?demo=1` or `bases-loaded.html?demo=1` runs seventeen manually advanced synthetic scenarios using the production rule engine. No MLB requests or live-history writes occur. The labeled demo includes a bottom-14 loaded tie, an automatic runner on second, and a bottom-15 bases-loaded walk that ties the game. Counts reset for the next batter after a walk or hit-by-pitch. Demo notifications require explicit opt-in and carry a DEMO prefix.
