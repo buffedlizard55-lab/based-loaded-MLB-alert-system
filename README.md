@@ -95,7 +95,7 @@ Both alert HTML entrypoints are intentionally identical; update both when changi
 
 ## Monitoring limits
 
-**Keep one monitor tab open and visible** — or run the watcher below, which does not need a browser at all. Hidden tabs pause and closing the browser stops the *page*; notifications need browser support and permission, and sound must be enabled with a click each session. For monitoring with every tab closed, run `node tools/watcher.mjs` on any always-on machine (same rules engine, optional phone push).
+**Keep one monitor tab open and visible** — or run the watcher below, which does not need a browser at all. Hidden tabs pause and closing the browser stops the *page*; notifications need browser support and permission, and sound must be enabled with a click each session. For monitoring with every tab closed, run `node tools/watcher.mjs` on any always-on machine (same rules engine, optional phone push) — the recipes are in [`deploy/`](deploy/) with a step-by-step [deployment guide](docs/watcher-deployment.md) for systemd, Docker/compose, launchd or a cron one-shot.
 
 Schedule discovery checks today and yesterday in America/New_York every 15 seconds, retaining live overnight games. All live games in inning 9+ are checked using coherent status + linescore snapshots, even if not yet tied, every two seconds **after** each scan (four concurrent requests maximum). Upstream delays, errors and brief between-poll situations can cause missed alerts. Network failures and stale snapshots are visibly marked, not treated as an all-clear. The shared API client honors HTTP 429 backoff.
 
@@ -108,6 +108,7 @@ node tools/bases-loaded-test.mjs         # rules engine
 node tools/bases-loaded-monitor-test.mjs # monitor page controller
 node tools/bases-loaded-strip-test.mjs   # site-wide strip + page wiring
 node tools/watcher-test.mjs              # the always-on watcher (same rules, no browser)
+node tools/watcher-deploy-test.mjs        # deployment recipes vs. the watcher's real settings
 node tools/site-links-test.mjs           # pages, links, citations, CI wiring
 node tools/deployed-site-test.mjs        # the published site itself (network)
 ```
@@ -184,7 +185,9 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    browser (no dependencies, one file), logs every alert with its official snapshot link
    and can push to a phone (`WATCHER_WEBHOOK_URL`, `WATCHER_NTFY_TOPIC`). What that still
    needs is **somewhere to run**: an always-on machine or scheduler *you* provide — nothing
-   is hosted for you, and this repository ships no server. Original caveat, still true of
+   is hosted for you, and no recipe can provide that host: systemd, Docker/compose, launchd
+   and cron recipes ship in [`deploy/`](deploy/) with a [deployment guide](docs/watcher-deployment.md)
+   and a healthcheck that reads the watcher's own state file. Original caveat, still true of
    the page: hidden tabs pause and closing the browser stops the page's watch, so the
    single biggest gap for "use it every day"
    (full details: [docs/bases-loaded-alerts.md](docs/bases-loaded-alerts.md) → *Notifications and practical limits*).
@@ -200,7 +203,7 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 5. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
-   plus 99 monitor, 160 strip, 85 watcher and 278 site checks, and a published-site check verifies the
+   plus 99 monitor, 160 strip, 85 watcher, 107 deployment and 289 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment — the next live tied bottom-9+ game is
    the real acceptance test.
@@ -383,10 +386,23 @@ line, so what was checked, what was corrected and what is still open is written 
   all-clears. `tools/watcher-test.mjs` drives it with a stubbed network and clock (85
   checks) in CI — and caught a real bug while being written: `deliver()` posted to
   `undefined/<topic>` when a caller built a config without `ntfyServer`, now defaulted.
-  Honest remainder: **hosting and scheduling** (systemd, Docker, a spare machine) and
-  browser-grade Web Push (VAPID + service worker) are still not provided.
+  Honest remainder: browser-grade Web Push (VAPID + service worker) is still not provided.
+- **The watcher is now deployable (work item 1's code half).** The recipes ship in
+  [`deploy/`](deploy/) — a hardened systemd unit (non-root user, `Restart=always`, journal
+  logging, environment file outside the unit), a Dockerfile plus compose file (unprivileged
+  `node` user, read-only root, named volume for the state that prevents duplicate alerts) and
+  a launchd plist — with a step-by-step [guide](docs/watcher-deployment.md) covering push
+  channels, cron one-shots, where alerts appear and resource use. The container healthcheck is
+  real: it reads the watcher's own state file, so a hung process is unhealthy while an upstream
+  outage is deliberately *not* misreported as one — its header states plainly what it does and
+  does not prove. `tools/watcher-deploy-test.mjs` keeps the recipes honest by checking them
+  against the watcher's source: every `WATCHER_*` the code reads must be documented (it found
+  `WATCHER_LOG_FILE` and `WATCHER_STATE_FILE` missing on its first run), no invented variables,
+  no committed secrets (comments excluded), correct paths and restart policy, volume-backed
+  state, and the healthcheck's exit codes **executed** rather than pattern-matched. What no
+  recipe can give you is the host itself.
 - Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · watcher
-  85 · site 278 · published-site 30 (local dry run against `node server.mjs`).
+  85 · deploy 107 · site 289 · published-site 30 (local dry run against `node server.mjs`).
 
 ## Original MLB Live PBP documentation
 
@@ -662,6 +678,7 @@ for archived games the request is scoped to the feed's game season.
 │       └── …
 ├── tools/                     # deterministic test suites (no packages, no network)
 │   └── watcher.mjs            # always-on watcher: same rules engine, no browser needed
+├── deploy/                    # how to host the watcher: systemd · Docker · launchd · cron
 ├── docs/                      # detection contract, verification reports, quickstart
 ├── .github/workflows/         # smoke.yml — checks in CI (Pages publishes from main)
 └── server.mjs                 # optional local static + replay-log server

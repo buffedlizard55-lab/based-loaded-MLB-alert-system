@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Loaded Late watcher — launchd recipe for macOS.
+
+  Install (no sudo needed for a per-user LaunchAgent):
+
+    cp deploy/com.loadedlate.watcher.plist ~/Library/LaunchAgents/
+    # edit the two absolute paths below to your checkout and log directory first
+    launchctl load ~/Library/LaunchAgents/com.loadedlate.watcher.plist
+
+  Check it:  launchctl list | grep loadedlate
+  Read logs: /usr/bin/log stream --predicate 'process == "node"'
+  Stop it:   launchctl unload ~/Library/LaunchAgents/com.loadedlate.watcher.plist
+
+  A laptop that sleeps stops watching while it sleeps — for a genuinely
+  always-on watch, use the systemd or Docker recipe on a machine that stays up.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.loadedlate.watcher</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/bin/env</string>
+      <string>node</string>
+      <string>tools/watcher.mjs</string>
+    </array>
+
+    <!-- EDIT ME: the checkout, so the watcher finds assets/js/bases-loaded-core.js -->
+    <key>WorkingDirectory</key>
+    <string>/opt/loaded-late</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <!-- EDIT ME: keep this on disk that survives reboots: alert log + dedup state -->
+      <key>WATCHER_LOG_DIR</key>
+      <string>/usr/local/var/loaded-late</string>
+      <key>WATCHER_QUIET</key>
+      <string>1</string>
+      <!--
+        Add delivery here if you want pushes from a Mac:
+          <key>WATCHER_NTFY_TOPIC</key><string>my-loaded-late</string>
+        Keep secrets in a file only you can read, or use Keychain, rather than
+        committing them to a plist in version control.
+      -->
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Restart if it ever exits; the watcher itself already survives upstream errors. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/loaded-late-watcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/loaded-late-watcher.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Nice</key>
+    <integer>5</integer>
+  </dict>
+</plist>
