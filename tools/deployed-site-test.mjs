@@ -93,6 +93,9 @@ const PUBLISHED_FILES = [
   "assets/js/bases-loaded.js",
   "assets/js/bases-loaded-core.js",
   "assets/js/bases-loaded-strip.js",
+  "assets/js/push-alerts.js",
+  "assets/js/vapid-config.js",
+  "sw.js",
   "assets/css/bases-loaded.css",
   "assets/css/bases-loaded-strip.css",
 ];

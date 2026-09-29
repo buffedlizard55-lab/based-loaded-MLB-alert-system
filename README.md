@@ -108,15 +108,23 @@ node tools/bases-loaded-test.mjs         # rules engine
 node tools/bases-loaded-monitor-test.mjs # monitor page controller
 node tools/bases-loaded-strip-test.mjs   # site-wide strip + page wiring
 node tools/watcher-test.mjs              # the always-on watcher (same rules, no browser)
-node tools/watcher-deploy-test.mjs        # deployment recipes vs. the watcher's real settings
+node tools/watcher-deploy-test.mjs       # deployment recipes vs. the watcher's real settings
+node tools/webpush-test.mjs              # Web Push encryption/VAPID against the RFC vectors
+node tools/push-alerts-test.mjs          # the site's phone-alerts panel (stub browser + DOM)
 node tools/site-links-test.mjs           # pages, links, citations, CI wiring
 node tools/deployed-site-test.mjs        # the published site itself (network)
 ```
 
-These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. Demo data never enters live history. The site suite checks that every page and every internal
+These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. `webpush-test.mjs` reproduces the published RFC 8291 and RFC 8292 vectors value by value
+(including the intermediate HKDF steps) and decrypts the RFC's message with an independently
+written receiver; `push-alerts-test.mjs` drives every branch of the subscribe panel — including
+a refused permission prompt, a subscribe that throws, and a clipboard that refuses to copy.
+Demo data never enters live history. The site suite checks that every page and every internal
 link target exists, that no page uses a root-absolute path (the copy has to work under a
 project Pages subpath), that outbound links are HTTPS and no third-party scripts are loaded,
-that the monitor and the sources page still accept no manual input, that the project
+that the monitor and the sources pages still take no typed input into the alert pipeline (the
+phone-alerts device name is the one editable control, and nothing that computes or displays an
+alert reads it), that the project
 prompt and the verbatim Rule 5.08(b) sentence are still present in this README, that the
 documented alert projection still matches `api.js`, and that the repository ships no
 competing Pages deployment. The last suite, `tools/deployed-site-test.mjs`, is the only
@@ -183,7 +191,8 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 1. **Browser-bound *by default*, but no longer only.** The page still alerts only while it
    is open and visible — but `tools/watcher.mjs` runs the **same rules engine** outside the
    browser (no dependencies, one file), logs every alert with its official snapshot link
-   and can push to a phone (`WATCHER_WEBHOOK_URL`, `WATCHER_NTFY_TOPIC`). What that still
+   and can push to a phone (`WATCHER_WEBHOOK_URL`, `WATCHER_NTFY_TOPIC`, or Web Push to a
+   device subscribed from the site's *Phone alerts* panel). What that still
    needs is **somewhere to run**: an always-on machine or scheduler *you* provide — nothing
    is hosted for you, and no recipe can provide that host: systemd, Docker/compose, launchd
    and cron recipes ship in [`deploy/`](deploy/) with a [deployment guide](docs/watcher-deployment.md)
@@ -195,31 +204,44 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    is late); a late-inning game gets a fresh official snapshot every 2 s on the monitor
    and every 5 s on the strip. A situation that appears and resolves inside one gap, or
    upstream publication delays, can be missed. Nothing is back-filled.
-3. **Per-browser history.** Alerts live in this browser's `localStorage` (7 days, max 200
+3. **Web Push still depends on third-party infrastructure at the edges.** The alert content is
+   encrypted to a key only the subscribed device holds (RFC 8291) and signed with the watcher's
+   own VAPID key (RFC 8292), so the push service transports ciphertext it cannot read — but it
+   still has to transport it (Chrome/Edge and Firefox hand that to Google and Mozilla; Safari to
+   Apple), and it still sees *that* an alert happened and when. That is the price of reaching a
+   phone with the browser closed, and it is stated here rather than glossed over.
+4. **Per-browser history.** Alerts live in this browser's `localStorage` (7 days, max 200
    entries). Not cross-device, not a full historical replay of every game — which is why
    the monitor now **exports** the history (JSON/CSV) and can copy a one-line evidence
    citation carrying the official snapshot link: the file, not the browser, is the record.
-4. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
+5. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
-5. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
-   plus 99 monitor, 160 strip, 85 watcher, 107 deployment and 294 site checks, and a published-site check verifies the
+6. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
+   plus 99 monitor, 160 strip, 120 watcher, 112 deployment, 130 Web Push, 74 phone-alert and
+   343 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
-   been observed end-to-end from this deployment — the next live tied bottom-9+ game is
-   the real acceptance test.
-6. **Development-sandbox network limit (flagged, open).** The sandbox used for the
+   been observed end-to-end from this deployment, and no alert has yet arrived on a real
+   phone through a real push service — the next live tied bottom-9+ game is the real
+   acceptance test.
+7. **Development-sandbox network limit (flagged, open).** The sandbox used for the
    2026-09-29 session cannot reach `statsapi.mlb.com` (TLS egress is blocked: curl exits
    with `SSL_ERROR_SYSCALL`, HTTP 000). The API projections documented here were verified
    in the session earlier the same day and must be re-confirmed from a networked machine
    or by the CI smoke workflow. **No live-alert claim in this repository is based on a
    response that was not fetched from the official API.**
-7. **Cross-page quiet window is 90 seconds by design.** Another page's recent alert
+8. **Cross-page quiet window is 90 seconds by design.** Another page's recent alert
    silences this page's chime for the same game + inning; a confirmed exit and reload
    still alerts (observer-scoped). If field use shows double beeps or missed beeps, tune
    `QUIET_MS` / `CROSS_PAGE_QUIET_MS` in the two controllers.
 
 **Suggested work, in priority order (next session / the session after)**
 
+0. **Prove it live, on a real phone.** Everything in this repository is verified by vectors,
+   stubs and byte comparisons — but no alert has yet travelled the whole path: official
+   snapshot → watcher → push service → phone notification → tapped open on the game page.
+   That needs one live tied-game-entering-bot-9+ situation with a subscribed device, and it is
+   the only remaining acceptance test. Everything else is preparation for it.
 1. ~~Confirm the published site.~~ **Done, and now guarded.** The site is live at
    [buffedlizard55-lab.github.io/based-loaded-MLB-alert-system](https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/),
    and the deployed copy was read back on 2026-09-29 to confirm it is the copy in this
@@ -237,10 +259,11 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    requires `assets/js/bases-loaded-core.js` **verbatim** (no forked rules), polls the same
    official endpoints, de-duplicates across restarts, writes a JSONL alert log carrying the
    official snapshot URL, and pushes via a webhook or ntfy. Covered by
-   `tools/watcher-test.mjs` (85 checks, stubbed network and clock). Still open, and honestly
-   *not* solved by that file: **hosting and scheduling** — somebody has to run it (systemd,
-   Docker, a scheduler, a spare machine), and browser-grade Web Push (VAPID + a service
-   worker) is still not implemented; the webhook/ntfy route is what reaches a phone today.
+   `tools/watcher-test.mjs` (120 checks, stubbed network and clock). Browser-grade **Web Push
+   (VAPID) shipped this session** — see the work item below. Still open, and honestly *not*
+   solved by that file: **someone still has to run it** on a machine that stays on. The recipes
+   and guide exist ([`deploy/`](deploy/), [docs/watcher-deployment.md](docs/watcher-deployment.md)),
+   but this repository has not observed a real always-on host keeping its own watch.
 4. **Wider alert context** (due-up hitters, pitcher line) only after verifying the
    extra projection fields against a live payload first — never widen a projection on
    assumption. The extra-inning `linescore.offense` shape used by the slate board is the
@@ -253,7 +276,16 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    record** rather than at this site's own history, because history is per browser and a
    link into it would be empty for anyone else — see limitation 3. Still open: a
    cross-device store (the always-on watcher in item 3 is the natural home for it).
-6. **Mobile daily-driver polish:** installable PWA manifest, vibration on alert.
+6. **Mobile daily-driver polish:** a web app manifest and icons (iOS Web Push already
+   requires *Add to Home Screen*, and today that install gets a screenshot for an icon), and
+   vibration with the notification.
+7. **Watcher operations, still thin:** a `--doctor`/`--check` mode that reports a half-configured
+   channel, an unreadable key file, an empty store and an unreachable upstream in one command
+   (today the startup banner covers the first three and the per-cycle line covers the fourth);
+   retry/backoff for push `429`/`5xx` instead of "the next alert is the retry"; and CLI listing /
+   pruning of stored subscriptions (the store is JSON on purpose, but reaching for `jq` is not a
+   feature).
+8. ~~Browser-grade Web Push.~~ **Shipped this session** — see the session log below.
 
 ## Session log — 2026-09-29 (three verification passes)
 
@@ -386,7 +418,9 @@ line, so what was checked, what was corrected and what is still open is written 
   all-clears. `tools/watcher-test.mjs` drives it with a stubbed network and clock (85
   checks) in CI — and caught a real bug while being written: `deliver()` posted to
   `undefined/<topic>` when a caller built a config without `ntfyServer`, now defaulted.
-  Honest remainder: browser-grade Web Push (VAPID + service worker) is still not provided.
+  Honest remainder at the time: browser-grade Web Push (VAPID + service worker) was not
+  provided — that is the next batch below, and this line is left as written rather than
+  quietly backdated.
 - **The watcher is now deployable (work item 1's code half).** The recipes ship in
   [`deploy/`](deploy/) — a hardened systemd unit (non-root user, `Restart=always`, journal
   logging, environment file outside the unit), a Dockerfile plus compose file (unprivileged
@@ -401,8 +435,62 @@ line, so what was checked, what was corrected and what is still open is written 
   no committed secrets (comments excluded), correct paths and restart policy, volume-backed
   state, and the healthcheck's exit codes **executed** rather than pattern-matched. What no
   recipe can give you is the host itself.
-- Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · watcher
-  85 · deploy 107 · site 289 · published-site 30 (local dry run against `node server.mjs`).
+- **Phone alerts: real Web Push, end to end (work item 8, shipped).** The watcher could only
+  reach a phone through ntfy or a webhook. Now it can send Web Push itself, with no third party
+  able to read the alert content: [`tools/webpush.mjs`](tools/webpush.mjs) implements RFC 8291
+  (aes128gcm encryption to the subscriber's `p256dh`, keyed by HKDF over the ECDH secret) and
+  RFC 8292 (VAPID, ES256 JWT with the raw `r||s` signature JOSE requires) in one dependency-free
+  file using Node's own crypto. It is not "implemented and assumed": `tools/webpush-test.mjs`
+  (130 checks) reproduces RFC 8291 §5 / Appendix A *including every intermediate value* — the
+  ECDH secret, `PRK_key`, IKM, PRK, CEK, the 12-octet nonce — and decrypts the RFC's 144-octet
+  message with an independently written receiver path, then verifies RFC 8292 §2.4's published
+  JWT with its published JWK. Writing it surfaced two things worth recording: the RFC's own
+  `Content-Length: 145` disagrees with its decoded 144-octet body (the bytes are used, and the
+  discrepancy is documented where a reader would hit it), and the plaintext limit is not
+  folklore — 3993 = 4096 − 86 header − 1 delimiter − 16 tag, asserted as an exact arithmetic
+  identity so a future edit cannot quietly shave the budget.
+- **Things the tests caught, in the order they caught them.** (1) `Number(x) || fallback`
+  silently treats an explicit `0` as absent — a real bug for `expiresIn: 0` and for epoch-zero
+  clocks, now decided by `Number.isFinite` instead of truthiness; the same class of bug was
+  fixed in the TTL clamp before it could ship a literal `TTL: NaN` header. (2) The record-size
+  guard was unreachable as written and the delimiter byte was being counted against the
+  *plaintext* limit (an off-by-one that would have refused a legal 3993-byte payload); the three
+  budgets — plaintext, RFC 8188 record, whole request body — are now checked separately, so the
+  error names the real culprit. (3) A test asserted a *ciphertext* slice equalled a published
+  *plaintext* value; the assertion moved to the decryption path where it belongs. (4) The
+  subscription store was written in place, so a kill mid-write could have silently emptied it —
+  it is now written to a temporary file and renamed, and the rename is what reports success.
+- **The watcher now sends it.** `deliverPush()` (in [`tools/watcher.mjs`](tools/watcher.mjs)) reads
+  the store, encrypts per subscription, signs with the VAPID key, and reports **one result per
+  device** (`delivered → push(phone): HTTP 201 · 1234 bytes` or `FAILED → push(phone): HTTP 410 …`)
+  — never a blanket "sent". A subscription the push service reports gone (404/410) is removed
+  from the store and the removal is logged. Two new settings (`WATCHER_VAPID_KEYS`,
+  `WATCHER_PUSH_SUBSCRIPTIONS`, plus an optional `WATCHER_VAPID_SUBJECT`); configuring only one
+  is a startup *warning*, because a half-configured channel otherwise looks exactly like a quiet
+  one. The watcher test (85 → 120 checks) proves the wiring the only way that counts: it decrypts
+  the bytes the watcher actually posted to the stub push service and asserts the plaintext is the
+  alert text, using its own hand-rolled HKDF rather than the code under test. Delivery endpoints
+  are masked in every log line — an endpoint is a capability URL, and logs get shared.
+- **The site can now hand a device over.** The *Phone alerts* panel (`assets/js/push-alerts.js`,
+  `assets/js/vapid-config.js`, and a caching-free `sw.js` that exists only to show the
+  notification and open the game page) subscribes the device with the watcher's public key,
+  shows the store entry, and says plainly that the page cannot reach the watcher — this is a
+  static site, so the entry travels by copy/paste. `tools/push-alerts-test.mjs` (74 checks) drives
+  every state with a stub browser and a stub document: insecure, unsupported, unconfigured,
+  blocked, ready, subscribed, permission refused mid-prompt, subscribe throwing, clipboard
+  refused (it falls back to selecting the text and *says* the copy was blocked). Reading the
+  panel's state was found to register a service worker as a side effect — merely opening the page
+  installed one — so lookups are now read-only and only the button creates anything.
+- **A guard had to be made more exact rather than dropped.** "The monitor pages contain no manual
+  input" is the brief's no-typing rule, and the phone panel legitimately adds a device-name box.
+  The check now requires that it is the *only* editable control on those pages, that it is not
+  inside a form, and that neither the rules engine nor either monitor controller reads it; the
+  entry output is `readonly`. The rule that actually matters — nothing has to be typed for a
+  situation to be caught — is still enforced.
+- Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · watcher 120 ·
+  deploy 112 · Web Push 130 · phone alerts 74 · site 343 · published-site 33 (local dry run
+  against `node server.mjs`). CI runs the two new suites (vectors and panel) in the
+  deterministic job.
 
 ## Original MLB Live PBP documentation
 
@@ -673,11 +761,15 @@ for archived games the request is scoped to the feed's game season.
 │       ├── bases-loaded-core.js      # THE RULES: tied + loaded + bottom 9+ (shared)
 │       ├── bases-loaded.js           # monitor controller (slate, alerts, history)
 │       ├── bases-loaded-strip.js     # site-wide strip controller (other pages)
+│       ├── push-alerts.js            # phone-alerts panel: subscribe this device
+│       ├── vapid-config.js           # the watcher's public key goes here
 │       ├── ui.js                     # inherited shared UI helpers
 │       ├── reviews.js / reviews-feed.js / scoreboard.js / props.js / game.js
 │       └── …
+├── sw.js                      # service worker: shows a Web Push notification, caches nothing
 ├── tools/                     # deterministic test suites (no packages, no network)
-│   └── watcher.mjs            # always-on watcher: same rules engine, no browser needed
+│   ├── watcher.mjs            # always-on watcher: same rules engine, no browser needed
+│   └── webpush.mjs            # Web Push encryption (RFC 8291) + VAPID (RFC 8292)
 ├── deploy/                    # how to host the watcher: systemd · Docker · launchd · cron
 ├── docs/                      # detection contract, verification reports, quickstart
 ├── .github/workflows/         # smoke.yml — checks in CI (Pages publishes from main)

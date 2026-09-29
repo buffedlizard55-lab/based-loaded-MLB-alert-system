@@ -137,6 +137,20 @@ ok(
     dockerfile.includes("COPY assets/js/bases-loaded-core.js"),
   "The image carries the watcher AND the site's rules engine it requires",
 );
+// The watcher imports tools/webpush.mjs (Web Push). A Dockerfile that copies the
+// watcher but not the module it imports starts and then dies with ERR_MODULE_NOT_FOUND,
+// which is exactly the kind of thing that only shows up in production.
+const watcherImports = [...watcher.matchAll(/from "\.\/([^"]+)"/g)].map((match) => match[1]);
+for (const specifier of watcherImports) {
+  ok(
+    dockerfile.includes(`COPY tools/${specifier}`) || dockerfile.includes(`COPY ${specifier}`),
+    `The image copies the local module the watcher imports: ${specifier}`,
+  );
+}
+ok(
+  watcherImports.length > 0 && watcherImports.includes("webpush.mjs"),
+  "The Dockerfile check above has something to check (the watcher does import webpush.mjs)",
+);
 ok(
   !/COPY \.\s/.test(dockerfile),
   "The image copies an explicit file list, not the whole repository",

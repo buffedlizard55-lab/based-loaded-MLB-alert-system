@@ -167,6 +167,72 @@
             </div>
             <div id="history"></div>
           </section>
+          <section class="monitor-section" id="phone-alerts">
+            <div class="section-heading">
+              <h2><span class="section-number">05</span> Phone alerts</h2>
+              <span class="section-tag">WORKS WITH THIS TAB CLOSED</span>
+            </div>
+            <p class="push-lead">
+              The buttons above only reach you while this tab is open and
+              visible. Web Push is different: subscribe once here, hand the entry
+              to the watcher, and a tied-bases-loaded bottom 9+ alert arrives on
+              this device with the browser closed — encrypted end to end, so the
+              push service only ever holds ciphertext.
+            </p>
+            <p id="phone-alerts-status" class="push-status" role="status">
+              Checking this browser…
+            </p>
+            <p id="phone-alerts-ios" class="push-note" hidden>
+              iPhone/iPad: Web Push only works after this site is added to the
+              Home Screen (Share → Add to Home Screen), iOS 16.4 or newer.
+            </p>
+            <div class="push-controls">
+              <label class="push-label" for="phone-alerts-label"
+                >Device name</label
+              >
+              <input
+                id="phone-alerts-label"
+                class="push-input"
+                type="text"
+                value="phone"
+                maxlength="32"
+                autocomplete="off"
+              />
+              <button class="btn" id="phone-alerts-enable">
+                Subscribe this device</button
+              ><button class="btn btn-ghost" id="phone-alerts-disable" hidden>
+                Unsubscribe</button
+              >
+            </div>
+            <div id="phone-alerts-entry" class="push-entry">
+              <div class="push-entry-head">
+                <span
+                  >Paste this entry into the watcher's
+                  <code>subscriptions</code> array</span
+                ><button class="btn btn-ghost" id="phone-alerts-copy">
+                  Copy entry</button
+                >
+              </div>
+              <textarea
+                id="phone-alerts-output"
+                class="push-output"
+                readonly
+                rows="6"
+                spellcheck="false"
+                hidden
+              ></textarea>
+              <p class="push-note">
+                Store file: <code>WATCHER_PUSH_SUBSCRIPTIONS</code> (default
+                <code>data/push-subscriptions.json</code>). Device:
+                <span id="phone-alerts-endpoint"></span>
+              </p>
+              <p class="push-note">
+                This page cannot reach your watcher — GitHub Pages is static
+                files, and the watcher runs on your own machine. The entry is
+                how you carry the subscription across.
+              </p>
+            </div>
+          </section>
         </div>
         <aside>
           <section class="how-it-works">
@@ -314,6 +380,26 @@
     </main>
     <script src="assets/js/api.js"></script>
     <script src="assets/js/bases-loaded-core.js"></script>
+    <script src="assets/js/vapid-config.js"></script>
+    <script src="assets/js/push-alerts.js"></script>
     <script src="assets/js/bases-loaded.js"></script>
+    <script>
+      // The panel wires itself up only when it is on the page, and reports
+      // every reason it cannot work rather than sitting there looking broken.
+      // Guarded so a blocked/failed script cannot break the rest of the page.
+      if (window.LoadedLatePush) window.LoadedLatePush.mount(document, {
+        config: { publicKey: window.LOADED_LATE_VAPID_PUBLIC_KEY },
+        Notification:
+          typeof Notification === "undefined" ? undefined : Notification,
+        serviceWorker: navigator.serviceWorker,
+        PushManager: typeof PushManager === "undefined" ? undefined : PushManager,
+        clipboard: navigator.clipboard,
+        isSecureContext: window.isSecureContext === true,
+        isIos: /iPad|iPhone|iPod/.test(navigator.userAgent),
+        isStandalone:
+          window.navigator.standalone === true ||
+          window.matchMedia("(display-mode: standalone)").matches,
+      });
+    </script>
   </body>
 </html>

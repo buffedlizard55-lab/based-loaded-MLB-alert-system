@@ -16,8 +16,9 @@
  *      terminal someone is watching),
  *   2. appends it to a JSONL log, each record carrying the exact official
  *      snapshot URL it was read from (same schema as the site's export), and
- *   3. delivers it if a push channel is configured (`WATCHER_WEBHOOK_URL` or
- *      `WATCHER_NTFY_TOPIC`) — that is the part that reaches a phone.
+ *   3. delivers it if a push channel is configured (`WATCHER_WEBHOOK_URL`,
+ *      `WATCHER_NTFY_TOPIC`, or Web Push) — that is the part that reaches a
+ *      phone.
  *
  * Run
  *   node tools/watcher.mjs                 # watch until stopped (Ctrl-C)
@@ -29,20 +30,42 @@
  *   WATCHER_WEBHOOK_URL=…     POST {text, alert} JSON to this URL on an alert
  *   WATCHER_NTFY_TOPIC=…      push to https://ntfy.sh/<topic> (phone app)
  *   WATCHER_NTFY_SERVER=…     override the ntfy server (default ntfy.sh)
+ *   WATCHER_PUSH_SUBSCRIPTIONS=…  JSON file of Web Push subscriptions (see below)
+ *   WATCHER_VAPID_KEYS=…      JSON file with this watcher's VAPID key pair
+ *   WATCHER_VAPID_SUBJECT=…   optional mailto:/https: contact for the VAPID token
  *   WATCHER_LOG_DIR=data      where the JSONL log and dedup state live
  *   WATCHER_STATE_FILE=…      override the dedup state path
  *   WATCHER_ONCE=1            run one cycle and exit
  *   WATCHER_QUIET=1           no per-cycle heartbeat lines
  *
- * Delivery is never claimed when it did not happen: a failed webhook or ntfy
- * push is reported on the alert line and in the health summary, and the alert
- * is in the log regardless.
+ * Web Push is the channel that reaches a phone without a third party reading the
+ * alert: the message is encrypted (RFC 8291) to a key only the subscribed
+ * browser holds, and authenticated with a VAPID key (RFC 8292) — both
+ * implemented in `tools/webpush.mjs`, checked against the RFC test vectors.
+ * Enable it by setting BOTH `WATCHER_PUSH_SUBSCRIPTIONS` and
+ * `WATCHER_VAPID_KEYS`; setting only one is reported at startup rather than
+ * silently doing nothing. A subscription the push service reports as gone
+ * (404/410) is dropped from the store, and the log says so.
+ *
+ *   node tools/webpush.mjs --generate --write   # create the VAPID key pair
+ *
+ * Delivery is never claimed when it did not happen: a failed webhook, ntfy or
+ * Web Push delivery is reported on the alert line and in the health summary, and
+ * the alert is in the log regardless.
  */
 
 import { createRequire } from "node:module";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  maskEndpoint,
+  readSubscriptions,
+  readVapidKeys,
+  removeSubscription,
+  sendPush,
+  writeSubscriptions,
+} from "./webpush.mjs";
 
 const require = createRequire(import.meta.url);
 const rules = require("../assets/js/bases-loaded-core.js");
@@ -84,6 +107,9 @@ export function loadConfig(env = process.env) {
     webhookUrl: env.WATCHER_WEBHOOK_URL || "",
     ntfyTopic: env.WATCHER_NTFY_TOPIC || "",
     ntfyServer: (env.WATCHER_NTFY_SERVER || "https://ntfy.sh").replace(/\/+$/, ""),
+    pushSubscriptions: env.WATCHER_PUSH_SUBSCRIPTIONS || "",
+    vapidKeysFile: env.WATCHER_VAPID_KEYS || "",
+    vapidSubject: env.WATCHER_VAPID_SUBJECT || "",
     logDir,
     logFile: env.WATCHER_LOG_FILE || join(logDir, "watcher-alerts.jsonl"),
     stateFile: env.WATCHER_STATE_FILE || join(logDir, "watcher-state.json"),
@@ -93,6 +119,66 @@ export function loadConfig(env = process.env) {
 }
 
 /* --------------------------------------------------------------- delivery - */
+
+/**
+ * How long a push service should keep trying to deliver an alert, in seconds.
+ *
+ * The text carries its own observation timestamp and a link to the live game, so
+ * a slightly late alert is still honest and still useful; a very late one is
+ * neither. Half an hour is the point where "tied, bases loaded, bottom 9" stops
+ * being a description of a moment worth acting on.
+ */
+export const PUSH_TTL_SECONDS = 1_800;
+
+/**
+ * The notification a subscribed device will actually display, as JSON.
+ *
+ * `sw.js` (the service worker the panel registers) reads these fields: the title
+ * says which situation and inning, the body is the same evidence line the log and
+ * the other channels get, and `url` is what opens when the notification is tapped
+ * — the official Gameday page for that game. A push that cannot say what happened
+ * or open the record of it is barely better than no push.
+ */
+export function pushPayload(alert, text) {
+  const inning = Number(alert?.inning);
+  return JSON.stringify({
+    title: Number.isInteger(inning) ? `BASES LOADED — BOT ${inning}` : "BASES LOADED — tied, bottom 9+",
+    body: text,
+    url: alert?.gameUrl || "",
+    tag: pushTopic(alert),
+    gamePk: Number.isInteger(Number(alert?.gamePk)) ? Number(alert.gamePk) : null,
+    observedAtIso: alert?.observedAtIso || "",
+  });
+}
+
+/**
+ * Collapse key for a push notification (RFC 8030 §5.4): a newer alert about the
+ * same game replaces an older one still waiting on the device instead of
+ * stacking up behind it. Anything outside the permitted alphabet is dropped
+ * rather than guessed at.
+ */
+export function pushTopic(alert) {
+  const gamePk = Number(alert?.gamePk);
+  // "loaded-NaN" would pass the alphabet check, so the id is validated as an id.
+  if (!Number.isInteger(gamePk) || gamePk <= 0) return "loaded-late";
+  const topic = `loaded-${gamePk}`;
+  return /^[A-Za-z0-9_-]{1,32}$/.test(topic) ? topic : "loaded-late";
+}
+
+/**
+ * A half-configured Web Push channel is a mistake worth naming: it would
+ * otherwise look like a working channel that never fires.
+ */
+export function pushConfigProblem(config) {
+  const hasStore = Boolean(config?.pushSubscriptions);
+  const hasKeys = Boolean(config?.vapidKeysFile);
+  if (!hasStore && !hasKeys) return "";
+  if (hasStore && !hasKeys)
+    return "WATCHER_PUSH_SUBSCRIPTIONS is set but WATCHER_VAPID_KEYS is not (run: node tools/webpush.mjs --generate --write)";
+  if (!hasStore && hasKeys)
+    return "WATCHER_VAPID_KEYS is set but WATCHER_PUSH_SUBSCRIPTIONS is not (the store holds the subscriptions to send to)";
+  return "";
+}
 
 /**
  * One alert reached a channel, or it did not — never "probably". A channel that
@@ -136,7 +222,88 @@ export async function deliver(alert, config, fetchImpl = fetch) {
     }
   }
 
+  const pushProblem = pushConfigProblem(config);
+  if (pushProblem) {
+    results.push({ channel: "push", ok: false, detail: pushProblem });
+  } else if (config.pushSubscriptions && config.vapidKeysFile) {
+    results.push(...(await deliverPush(text, alert, config, fetchImpl)));
+  }
+
   return { text, results };
+}
+
+/**
+ * Send one alert to every stored Web Push subscription.
+ *
+ * Returns one result per subscription (plus one result explaining a store that
+ * could not be used at all), so the watcher log says exactly which device
+ * received an alert and which did not. Subscriptions the push service reports as
+ * permanently gone are removed from the store — and that rewrite is reported,
+ * because silently growing a store full of dead endpoints is how a channel rots.
+ */
+async function deliverPush(text, alert, config, fetchImpl) {
+  let vapid;
+  try {
+    vapid = readVapidKeys(config.vapidKeysFile);
+  } catch (error) {
+    return [{ channel: "push", ok: false, detail: String(error?.message || error) }];
+  }
+
+  if (!existsSync(config.pushSubscriptions))
+    return [
+      {
+        channel: "push",
+        ok: false,
+        detail: `no subscription store at ${config.pushSubscriptions} — subscribe this device on the site first`,
+      },
+    ];
+
+  const subscriptions = readSubscriptions(config.pushSubscriptions);
+  if (!subscriptions.length)
+    return [
+      {
+        channel: "push",
+        ok: false,
+        detail: `subscription store ${config.pushSubscriptions} holds nothing usable`,
+      },
+    ];
+
+  const results = [];
+  const gone = [];
+  for (const subscription of subscriptions) {
+    const label = subscription.label || "device";
+    const outcome = await sendPush(subscription, pushPayload(alert, text), {
+      fetchImpl,
+      vapid,
+      ttl: PUSH_TTL_SECONDS,
+      urgency: "high",
+      topic: pushTopic(alert),
+      subject: config.vapidSubject || undefined,
+    });
+    results.push({
+      channel: `push(${label})`,
+      ok: outcome.ok,
+      detail: outcome.ok
+        ? `HTTP ${outcome.status} · ${outcome.bytes} bytes · ${maskEndpoint(subscription.endpoint)}`
+        : `${outcome.error || `HTTP ${outcome.status}`} · ${maskEndpoint(subscription.endpoint)}` +
+          (outcome.retryAfter ? ` · retry after ${outcome.retryAfter}s` : ""),
+    });
+    if (outcome.gone) gone.push(subscription.endpoint);
+  }
+
+  if (gone.length) {
+    const kept = gone.reduce((list, endpoint) => removeSubscription(list, endpoint), subscriptions);
+    const saved = writeSubscriptions(config.pushSubscriptions, kept);
+    results.push({
+      channel: "push store",
+      ok: saved,
+      detail: saved
+        ? `dropped ${gone.length} gone subscription(s); ${kept.length} left`
+        : `could not rewrite ${config.pushSubscriptions} after ${gone.length} gone subscription(s)`,
+    });
+  }
+
+  return results;
 }
 
 /* ------------------------------------------------------------ persistence - */
@@ -324,16 +491,27 @@ function report(summary, config) {
 async function main() {
   const config = loadConfig();
   const state = readState(config.stateFile);
+  const pushReady = Boolean(config.pushSubscriptions && config.vapidKeysFile && !pushConfigProblem(config));
+  const stored = pushReady && existsSync(config.pushSubscriptions) ? readSubscriptions(config.pushSubscriptions) : [];
   const channels = [
     "stdout",
     `log ${config.logFile}`,
     config.webhookUrl ? "webhook" : null,
     config.ntfyTopic ? `ntfy ${config.ntfyServer}/${config.ntfyTopic}` : null,
+    pushReady ? `Web Push (${stored.length} subscription${stored.length === 1 ? "" : "s"})` : null,
   ].filter(Boolean);
   console.log(
     `Loaded Late watcher · same rules engine as the site · every ${config.pollMs / 1000}s ` +
       `(late innings ${config.lateMs / 1000}s) · channels: ${channels.join(", ")}`,
   );
+  // Say the quiet part at startup: a channel that is configured but cannot work
+  // would otherwise look identical to a channel that simply had nothing to send.
+  const configProblem = pushConfigProblem(config);
+  if (configProblem) console.log(`WARNING: ${configProblem}`);
+  else if (pushReady && !stored.length)
+    console.log(
+      `NOTE: no Web Push subscriptions in ${config.pushSubscriptions} yet — subscribe a device on the site.`,
+    );
 
   let stopping = false;
   const stop = (signal) => {
