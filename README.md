@@ -190,7 +190,7 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 5. **Live end-to-end proof still pending.** Deterministic suites cover 11,727 rule states
-   plus 74 monitor, 160 strip and 258 site checks, and a published-site check verifies the
+   plus 76 monitor, 160 strip and 258 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment — the next live tied bottom-9+ game is
    the real acceptance test.
@@ -310,7 +310,12 @@ line, so what was checked, what was corrected and what is still open is written 
   emits `::error`/`::warning` annotations naming each failure, and can be dry-run against
   a local server (`SITE_URL=http://localhost:8000/`) — 18/18 pass against this
   repository's own pages.
-- Deterministic suites after the change: rules 11,727 · monitor 74 · strip 160 · site
+- **Empty-slate copy.** An off-day used to read "No games on the slate yet — the
+  official schedule scan fills this list every 15 seconds", which implies a scan is
+  pending; the board now distinguishes a scan that has not answered from an official
+  schedule that really has no games today ("No games scheduled on this date"). Covered by
+  a new monitor-suite scenario (74 → 76 checks).
+- Deterministic suites after the change: rules 11,727 · monitor 76 · strip 160 · site
   258.
 
 ## Original MLB Live PBP documentation
