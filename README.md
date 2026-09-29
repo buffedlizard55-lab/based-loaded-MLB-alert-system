@@ -95,7 +95,7 @@ Both alert HTML entrypoints are intentionally identical; update both when changi
 
 ## Monitoring limits
 
-**Keep one monitor tab open and visible.** Hidden tabs pause and closing the browser stops monitoring. This is not a server-side, always-on push/SMS service. Notifications need browser support and permission; sound must be enabled with a click each session.
+**Keep one monitor tab open and visible** — or run the watcher below, which does not need a browser at all. Hidden tabs pause and closing the browser stops the *page*; notifications need browser support and permission, and sound must be enabled with a click each session. For monitoring with every tab closed, run `node tools/watcher.mjs` on any always-on machine (same rules engine, optional phone push).
 
 Schedule discovery checks today and yesterday in America/New_York every 15 seconds, retaining live overnight games. All live games in inning 9+ are checked using coherent status + linescore snapshots, even if not yet tied, every two seconds **after** each scan (four concurrent requests maximum). Upstream delays, errors and brief between-poll situations can cause missed alerts. Network failures and stale snapshots are visibly marked, not treated as an all-clear. The shared API client honors HTTP 429 backoff.
 
@@ -107,6 +107,7 @@ See [the detection rules, coverage and limitations](docs/bases-loaded-alerts.md)
 node tools/bases-loaded-test.mjs         # rules engine
 node tools/bases-loaded-monitor-test.mjs # monitor page controller
 node tools/bases-loaded-strip-test.mjs   # site-wide strip + page wiring
+node tools/watcher-test.mjs              # the always-on watcher (same rules, no browser)
 node tools/site-links-test.mjs           # pages, links, citations, CI wiring
 node tools/deployed-site-test.mjs        # the published site itself (network)
 ```
@@ -178,9 +179,14 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 
 **Limitations standing between this and a fully reliable everyday service**
 
-1. **Browser-bound monitoring.** The alert only exists while a page of this site is open
-   and visible. Hidden tabs pause; closing the browser stops it. There is no server-side
-   watcher, push, SMS or email — this is the single biggest gap for "use it every day"
+1. **Browser-bound *by default*, but no longer only.** The page still alerts only while it
+   is open and visible — but `tools/watcher.mjs` runs the **same rules engine** outside the
+   browser (no dependencies, one file), logs every alert with its official snapshot link
+   and can push to a phone (`WATCHER_WEBHOOK_URL`, `WATCHER_NTFY_TOPIC`). What that still
+   needs is **somewhere to run**: an always-on machine or scheduler *you* provide — nothing
+   is hosted for you, and this repository ships no server. Original caveat, still true of
+   the page: hidden tabs pause and closing the browser stops the page's watch, so the
+   single biggest gap for "use it every day"
    (full details: [docs/bases-loaded-alerts.md](docs/bases-loaded-alerts.md) → *Notifications and practical limits*).
 2. **Polling gaps.** Schedule discovery runs every 15 s (30 s on the strip when nothing
    is late); a late-inning game gets a fresh official snapshot every 2 s on the monitor
@@ -194,7 +200,7 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 5. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
-   plus 99 monitor, 160 strip and 270 site checks, and a published-site check verifies the
+   plus 99 monitor, 160 strip, 85 watcher and 276 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment — the next live tied bottom-9+ game is
    the real acceptance test.
@@ -224,9 +230,14 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 2. **Live-fire verification:** on the next tied game entering bot 9+, keep the monitor
    visible and record watch → load → chime → notification with the game link as proof.
    The new live slate makes this easy to document (the row shows the exact snapshot age).
-3. **Always-on delivery (the big one):** a small Node watcher reusing
-   `assets/js/bases-loaded-core.js` verbatim (it is dependency-free on purpose) that
-   pushes Web Push notifications when nobody has a tab open.
+3. ~~Always-on delivery (the big one)~~ **Shipped this session**: `tools/watcher.mjs`
+   requires `assets/js/bases-loaded-core.js` **verbatim** (no forked rules), polls the same
+   official endpoints, de-duplicates across restarts, writes a JSONL alert log carrying the
+   official snapshot URL, and pushes via a webhook or ntfy. Covered by
+   `tools/watcher-test.mjs` (85 checks, stubbed network and clock). Still open, and honestly
+   *not* solved by that file: **hosting and scheduling** — somebody has to run it (systemd,
+   Docker, a scheduler, a spare machine), and browser-grade Web Push (VAPID + a service
+   worker) is still not implemented; the webhook/ntfy route is what reaches a phone today.
 4. **Wider alert context** (due-up hitters, pitcher line) only after verifying the
    extra projection fields against a live payload first — never widen a projection on
    assumption. The extra-inning `linescore.offense` shape used by the slate board is the
@@ -361,8 +372,21 @@ line, so what was checked, what was corrected and what is still open is written 
   fetches every published page and alert asset and requires it to be **byte-identical**
   to the file in this repository (29 checks against a local dry run), reporting the first
   differing byte when it is not.
-- Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · site
-  270 · published-site 30 (local dry run against `node server.mjs`).
+- **The number-one limitation is now addressable (work item 3, shipped).** The alerts only
+  existed while a browser tab was open and visible. `tools/watcher.mjs` is one
+  dependency-free file that requires the site's rules engine **verbatim**, polls the same
+  official endpoints with the same cadences and the same `scanTarget` rule, keeps
+  de-duplication state on disk (a cron restart never re-alerts), appends every alert to a
+  JSONL log whose records carry the exact official snapshot URL, and delivers through
+  `WATCHER_WEBHOOK_URL` or `WATCHER_NTFY_TOPIC`. A failed channel is reported with its
+  reason and never as delivered; unreadable snapshots count as held watches, not
+  all-clears. `tools/watcher-test.mjs` drives it with a stubbed network and clock (85
+  checks) in CI — and caught a real bug while being written: `deliver()` posted to
+  `undefined/<topic>` when a caller built a config without `ntfyServer`, now defaulted.
+  Honest remainder: **hosting and scheduling** (systemd, Docker, a spare machine) and
+  browser-grade Web Push (VAPID + service worker) are still not provided.
+- Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · watcher
+  82 · site 276 · published-site 30 (local dry run against `node server.mjs`).
 
 ## Original MLB Live PBP documentation
 
@@ -637,6 +661,7 @@ for archived games the request is scoped to the feed's game season.
 │       ├── reviews.js / reviews-feed.js / scoreboard.js / props.js / game.js
 │       └── …
 ├── tools/                     # deterministic test suites (no packages, no network)
+│   └── watcher.mjs            # always-on watcher: same rules engine, no browser needed
 ├── docs/                      # detection contract, verification reports, quickstart
 ├── .github/workflows/         # smoke.yml — checks in CI (Pages publishes from main)
 └── server.mjs                 # optional local static + replay-log server
