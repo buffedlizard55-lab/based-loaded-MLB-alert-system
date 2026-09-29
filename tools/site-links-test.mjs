@@ -362,6 +362,31 @@ ok(
   readmeCount !== null && pageCount !== null,
   "Both the README and the sources page state the size of this suite",
 );
+
+// The rule-suite number is quoted in several places (README, the requirement
+// checklist, the verification log). They may lag a growing suite, but they may
+// never contradict each other — two different "official" counts is worse than
+// one stale count, and it is exactly what a reader would notice first.
+const ruleCounts = [];
+for (const [file, pattern] of [
+  ["README.md", /([\d,]+) rule states/g],
+  ["README.md", /rules ([\d,]+) ·/g],
+  ["verification.html", /([\d,]+) deterministic checks/g],
+  ["verification.html", /\\(([\d,]+) checks\\)/g],
+  ["verification.html", /([\d,]+) checks, including an 11,520-case/g],
+]) {
+  const text = read(file);
+  for (const match of text.matchAll(pattern))
+    ruleCounts.push({ file, value: Number(match[1].replace(/,/g, "")) });
+}
+ok(ruleCounts.length >= 3, "The rule-suite size is stated in the expected places");
+check(
+  new Set(ruleCounts.map((entry) => entry.value)).size,
+  1,
+  `Every stated rule-suite size agrees (${ruleCounts
+    .map((entry) => `${entry.file}:${entry.value}`)
+    .join(", ")})`,
+);
 check(
   pageCount,
   readmeCount,
