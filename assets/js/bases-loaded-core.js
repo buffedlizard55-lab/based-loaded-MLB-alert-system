@@ -87,10 +87,12 @@ const BasesLoadedRules = (() => {
       ? { id: ls.offense.onDeck.id, name: ls.offense.onDeck.fullName || "On Deck" }
       : null;
 
-    // Current play description
-    const currentPlay = ls.currentPlay?.result?.description ||
-      game.linescore?.currentPlay?.result?.description || null;
-    const lastEvent = ls.currentPlay?.result?.event || null;
+    // Current play description. The live projection carries the official
+    // result under liveData.plays.currentPlay (verified against the StatsAPI);
+    // demo/synthetic feeds attach the same result object to the linescore.
+    const playResult = game.lastPlay || ls.currentPlay?.result || null;
+    const currentPlay = playResult?.description || null;
+    const lastEvent = playResult?.event || null;
 
     // An incomplete live snapshot must not re-arm a previously active alert.
     const offenseKnown =
@@ -208,6 +210,13 @@ const BasesLoadedRules = (() => {
    * the quiet window, the second observation is recorded but must not beep or
    * raise another desktop notice. Same game in a *new* inning is a new
    * situation and is never suppressed.
+   *
+   * `observerId` identifies the page instance recording the observation.
+   * Entries this same page wrote are never counted: its own dedup state
+   * (`observe`'s `continuing` flag) already governs continuity, so a
+   * confirmed exit and reload inside the quiet window must still alert again
+   * — exactly as a single page always has. Only *other* observers (the other
+   * page of the site, or another tab) can suppress the sound.
    */
   function recentSharedAlert(
     history,
@@ -215,12 +224,14 @@ const BasesLoadedRules = (() => {
     inning,
     now = Date.now(),
     windowMs = 90000,
+    observerId = null,
   ) {
     const target = number(inning);
     if (!Array.isArray(history) || target === null) return false;
     return history.some((entry) => {
       if (!entry || entry.gamePk !== gamePk || entry.inning !== target)
         return false;
+      if (observerId != null && entry.observer === observerId) return false;
       const age = now - entry.observedAt;
       return Number.isFinite(entry.observedAt) && age >= 0 && age < windowMs;
     });
@@ -248,6 +259,9 @@ const BasesLoadedRules = (() => {
       ...scheduleGame,
       status: feed.gameData.status,
       linescore: feed.liveData.linescore,
+      // Official result of the current/last play, when the projection exposes
+      // it. Never inferred: absent plays.currentPlay stays null.
+      lastPlay: feed.liveData?.plays?.currentPlay?.result || null,
     };
   }
 

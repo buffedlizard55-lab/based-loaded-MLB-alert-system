@@ -14,6 +14,64 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 
 **New here?** [docs/loaded-late-quickstart.md](docs/loaded-late-quickstart.md) is the short version: which page to open, how to arm sound and notifications, what triggers an alert, and what the limits are.
 
+## 📌 Project prompt — read this first, every session
+
+> **Every work session on this repository starts by reading the prompt below.** It is the
+> source of truth for what we are building: use it as the starting point to confirm the
+> work aims at the right target, as the strong base to keep building and improving
+> something useful for everyday use, and as the acceptance checklist before finishing.
+> When in doubt, re-read it line by line against the code.
+
+```text
+Review the repo.
+
+I want to add functionality to this site
+
+https://buffedlizard55-lab.github.io/MLB-Live-PBP/reviews.html
+
+Clone the repo and create a copy of the website and then add a way to track when any MLB game has a tied game bases loaded situation in the bottom of the 9th or later.  10th, 11th, 12th, 13th, etc.  that should be the main focus of this alert system only.  Only want to track this situation.  We should think of all the different ways a bases loaded situation can happen and track it.  We should begin tracking when there is a tie game going to the bottom of the 9th or later so that we can be alerted to when the bases are loaded in the bottom 9th or innings occuring anytime after the 9th, like bot 9 bot 10 bot 11 bot 12 bot 13 bot 14 etc.  TIED GAME BOTTOM OF THE INNING THAT COULD END THE GAME SUCH AS BOTTOM OF 9TH, 10TH, 11TH, HOME TEAM COULD WALK OFF WHEN THE BASES ARE LOADED ALERT
+
+Put this prompt into the repo readme and read it everytime we work on the project as a starting point to make sure we are building what we are aiming for and have a strong base to continue building and improving on making something useful for everyday use.  It should solve the problem of having to manually check everything ourselves and having an up to date current feed.
+
+Review the repo.
+
+The following is taken from the Arena AI team and I think it makes a good point on building a successful project, so let's keep the Core Values and Own the Outcome as a focal point when building, developing, researching, suggesting upgrades, and implementing the work.
+
+Our Core Values
+
+Maximize P(Win)
+
+"Maximize the Probability of Winning": our decision making framework. In every decision, we weigh tradeoffs, assess risk, and choose the path that maximizes the probability that Arena succeeds. We set aside our emotions and make tough decisions in order to maximize P(Win). "Maximize P(Win)" frees us from constraints and clarifies that we must put Arena first.
+
+Own the Outcome
+
+We own results end to end — not just our individual slice of the work. When problems arise and we have the means to act, we do so without waiting for permission or assignment. We treat failure and success as signals and use them to improve. At Arena, we stay accountable to the final outcome.
+
+Work line by line verifying from official verified trusted sources, provide links for manual review.  There should be no manual input, work on your own to complete tasks.  Flag any irregularities for review.  No hallucinations.
+
+Verify no hallucinations.
+
+The goal of this project is to get a full list that follow our requirements.  No hallucinations.  Verify line by line.
+
+Site creation
+
+Create a github page for this repo that has clean ui, user friendly, simple and easy to use.
+
+It should be organized and clean.  It should include all relevant information in an easy to read format with official verified links as sources for review.  Work line by line verify everything no hallucinations.
+
+Go ahead and create a pull request and then merge the pull request onto the main. Make suggestions for what work still needs to be done and any limitations that is in the way of a successful project.  It should be worked on in this next session or the next session.  Work line by line verify everything no hallucinations.
+
+Run this task through multiple passes.
+
+Pass 1: Implement the task completely and verify the result.
+
+Pass 2: Review your work for bugs, missing requirements, incorrect assumptions, and edge cases. Fix everything you find.
+
+Pass 3: Re-check the entire implementation against the original request. Improve accuracy, reliability, completeness, and code quality. Fix any remaining issues.
+
+Do not stop after the first pass. Each pass must build on the previous one. Before finishing, verify that the final result fully satisfies the original request.  Work line by line verify everything no hallucinations.
+```
+
 ## Run / preview
 
 No build or dependencies are required:
@@ -52,6 +110,72 @@ These deterministic tests need neither external packages nor live MLB games. The
 ## Deploy this copy
 
 Serve this repository root on a static host — there is no build step and no server requirement. This checkout does **not** change the original `MLB-Live-PBP` deployment; publishing this copy requires turning Pages on for this repository once (Settings → Pages → *Deploy from a branch* → `main` / `/ (root)`), after which every push to `main` republishes the site at `https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/`. A ready-to-use Actions workflow is kept at [`docs/workflows/pages.yml`](docs/workflows/pages.yml) if you prefer the Actions deployment path instead; it has to be copied to `.github/workflows/` because the file lives outside that folder in this checkout. API usage remains subject to MLB's terms; this is an unofficial, personal-use project.
+
+## Sources for manual review
+
+Every claim in this project is checkable against these links (the monitor page also
+carries them in its **Sources for manual review** panel):
+
+| What we rely on | Official / verified link | Verified |
+| --- | --- | --- |
+| The site this repo is a copy of | [buffedlizard55-lab.github.io/MLB-Live-PBP/reviews.html](https://buffedlizard55-lab.github.io/MLB-Live-PBP/reviews.html) | Source copy, PR #1 |
+| Game discovery (all MLB games, any date) | [`GET /api/v1/schedule?sportId=1&date=YYYY-MM-DD`](https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2026-09-29) | Re-checked 2026-09-29 |
+| One coherent status + linescore + current play snapshot (the exact projection `getAlertSnapshot` sends) | [`GET /api/v1.1/game/823001/feed/live?fields=…`](https://statsapi.mlb.com/api/v1.1/game/823001/feed/live?fields=gamePk,gameData,status,abstractGameState,detailedState,statusCode,liveData,plays,currentPlay,result,description,event,eventType,rbi,awayScore,homeScore,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,offense,defense,first,second,third,id,fullName,balls,strikes,batter,pitcher,onDeck,inHole) | Verified 2026-09-29 |
+| Unfiltered shape of the same linescore (occupancy, count, defense/offense) | [`GET /api/v1/game/823001/linescore`](https://statsapi.mlb.com/api/v1/game/823001/linescore) | Verified 2026-09-29 |
+| Same games as MLB displays them (side-by-side review) | [MLB Gameday](https://www.mlb.com/gameday) | Reference |
+| Walk-off ending — *"When the winning run is scored in the last half-inning … with the bases full"* = **Rule 5.08(b)** | [Official Baseball Rules, 2023 edition (PDF, MLB)](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [Rule 5.08 text mirror](https://www.umpirebible.com/OBR16/5.0.htm) | Text checked 2026-09-29 |
+| Extra-inning automatic runner on second (Rule 7.01(b)) | [Official Baseball Rules PDF](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [MLB-family announcement](https://www.milb.com/news/major-league-baseball-extra-inning-rule) | Text checked 2026-09-29 |
+| Review/challenge rules inherited by the original pages | [MLB instant replay FAQ](https://www.mlb.com/news/instant-replay-review-faq/c-70189582) | Reference |
+| Our own detection contract (decision table, routes, limits) | [docs/bases-loaded-alerts.md](docs/bases-loaded-alerts.md) | This repo |
+
+## Where this still needs work — known limitations and the next sessions' list
+
+Carried forward from the project prompt ("make suggestions for what work still needs to
+be done and any limitations"), reviewed line by line against the code on 2026-09-29:
+
+**Limitations standing between this and a fully reliable everyday service**
+
+1. **Browser-bound monitoring.** The alert only exists while a page of this site is open
+   and visible. Hidden tabs pause; closing the browser stops it. There is no server-side
+   watcher, push, SMS or email — this is the single biggest gap for "use it every day"
+   (full details: [docs/bases-loaded-alerts.md](docs/bases-loaded-alerts.md) → *Notifications and practical limits*).
+2. **Polling gaps.** Schedule discovery runs every 15 s (30 s on the strip when nothing
+   is late); a late-inning game gets a fresh official snapshot every 2–5 s. A situation
+   that appears and resolves inside one gap, or upstream publication delays, can be
+   missed. Nothing is back-filled.
+3. **Per-browser history.** Alerts live in this browser's `localStorage` (7 days, max 200
+   entries). Not cross-device, not a full historical replay of every game.
+4. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
+   terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
+   The client self-limits and degrades visibly instead of guessing.
+5. **Live end-to-end proof still pending.** Deterministic suites cover 11,520+ synthetic
+   states plus this session's verified API projections, but a live qualifying game has
+   not yet been observed end-to-end from this deployment — the next live tied bottom-9+
+   game is the real acceptance test (network to `statsapi.mlb.com` is blocked inside the
+   development sandbox, so `tools/smoke-test.mjs` only runs with real egress, e.g. in CI).
+6. **Cross-page quiet window is 90 seconds by design.** Another page's recent alert
+   silences this page's chime for the same game + inning; a confirmed exit and reload
+   still alerts (observer-scoped). If field use shows double beeps or missed beeps, tune
+   `QUIET_MS` / `CROSS_PAGE_QUIET_MS` in the two controllers.
+
+**Suggested work, in priority order (next session / the session after)**
+
+1. **Ship it:** enable GitHub Pages for this repo (Settings → Pages → Deploy from a
+   branch → `main` / `/ (root)`), open the deployed monitor, and walk the UI once —
+   this session attempts the same via the GitHub API.
+2. **Live-fire verification:** on the next tied game entering bot 9+, keep the monitor
+   visible and record watch → load → chime → notification with the game link as proof.
+3. **Always-on delivery (the big one):** a small Node watcher reusing
+   `assets/js/bases-loaded-core.js` verbatim (it is dependency-free on purpose) that
+   pushes Web Push notifications when nobody has a tab open.
+4. **Wider alert context** (due-up hitters, pitcher line) only after verifying the
+   extra projection fields against a live payload first — never widen a projection on
+   assumption.
+5. **History export** (CSV/JSON) and a shareable per-alert link.
+6. **CI:** copy [`docs/workflows/pages.yml`](docs/workflows/pages.yml) and
+   [`docs/workflows/smoke.yml`](docs/workflows/smoke.yml) into `.github/workflows/` so
+   every push runs the deterministic suites and a nightly live-API smoke check.
+7. **Mobile daily-driver polish:** installable PWA manifest, vibration on alert.
 
 ---
 

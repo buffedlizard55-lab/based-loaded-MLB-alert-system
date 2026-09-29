@@ -262,15 +262,22 @@ const MLB = (() => {
   /** Coherent, lean snapshot for the narrow late-inning alert monitor.
    * Status and linescore come from one response, not independently timed polls.
    * Keep base identities: official occupancy is authoritative, not play text.
-   * Enhanced: includes count (balls/strikes), current batter/pitcher, and
-   * current play description for richer alert context.
+   * Enhanced: includes count (balls/strikes), current batter/pitcher, and the
+   * official result of the current/last play (liveData.plays.currentPlay) for
+   * richer alert context.
+   *
+   * The exact projection below was verified against the live StatsAPI on
+   * 2026-09-29 (game 823001): it returns gameData.status, the complete
+   * linescore (teams runs, offense/defense occupants, balls/strikes/outs,
+   * inning/half) and liveData.plays.currentPlay.result {event, description,
+   * eventType, rbi, awayScore, homeScore} in one response.
    */
   async function getAlertSnapshot(gamePk, options = {}) {
     const fields = 'gamePk,gameData,status,abstractGameState,detailedState,statusCode,' +
-      'liveData,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,' +
+      'liveData,plays,currentPlay,result,description,event,eventType,rbi,awayScore,homeScore,' +
+      'linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,' +
       'offense,defense,first,second,third,id,fullName,' +
-      'balls,strikes,batter,pitcher,onDeck,inHole,' +
-      'currentPlay,result,description,event,eventType,rbi,awayScore,homeScore';
+      'balls,strikes,batter,pitcher,onDeck,inHole';
     return getJSON(`${V11}/game/${gamePk}/feed/live?fields=${fields}`,
       { timeout: 5000, retries: 0, ...options });
   }

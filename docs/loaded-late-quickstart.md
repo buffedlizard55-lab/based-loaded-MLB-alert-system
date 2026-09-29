@@ -26,7 +26,7 @@ On-page alerts always work whether or not you enable sound or notifications.
 
 ## See it work in ten seconds
 
-- `index.html?demo=1` — nine guided scenarios on the monitor (top-half exclusion, the changeover, partial bases, the alert, a walk-off, bottom 14).
+- `index.html?demo=1` — seventeen guided scenarios on the monitor (top-half exclusion, the changeover, partial bases, the alert, bases clearing and reloading, a walk-off, the automatic extra-inning runner, bottom 14, and a tying bases-loaded walk in bottom 15).
 - `reviews.html?ll-demo=1` — six guided scenarios in the strip: changeover → walk → single → intentional walk → **bottom 12, two outs, full count** → cleared. Demo mode makes no MLB requests and never touches your alert history.
 
 ## What you will see

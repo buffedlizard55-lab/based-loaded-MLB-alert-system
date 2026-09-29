@@ -209,6 +209,53 @@
               (5) — one pitch can end the game.
             </p>
           </details>
+          <details class="coverage">
+            <summary>Sources for manual review</summary>
+            <p>
+              Every state on this page is read from MLB's official public
+              StatsAPI — no third-party data and no manual entry. Verify any
+              alert line by line with these links:
+            </p>
+            <ul>
+              <li>
+                <a
+                  href="https://statsapi.mlb.com/api/v1/schedule?sportId=1&amp;date=2026-09-29"
+                  >Official schedule feed</a
+                >
+                — the exact discovery endpoint this monitor polls (change the
+                <code>date</code> to check any day).
+              </li>
+              <li>
+                <a
+                  href="https://statsapi.mlb.com/api/v1.1/game/823001/feed/live?fields=gamePk,gameData,status,abstractGameState,detailedState,statusCode,liveData,plays,currentPlay,result,description,event,eventType,rbi,awayScore,homeScore,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,offense,defense,first,second,third,id,fullName,balls,strikes,batter,pitcher,onDeck,inHole"
+                  >Official live snapshot projection</a
+                >
+                — the exact one-request snapshot behind every watch/alert;
+                verified against this real game response (2026-09-29).
+              </li>
+              <li>
+                <a href="https://www.mlb.com/gameday">MLB Gameday</a> — the
+                same games as MLB displays them, for side-by-side review.
+              </li>
+              <li>
+                <a
+                  href="https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf"
+                  >Official Baseball Rules (PDF, MLB)</a
+                >
+                — walk-off ending (Rule 5.08(b): winning run scored in the last
+                half-inning with the bases full) and the extra-innings automatic
+                runner (Rule 7.01(b)).
+              </li>
+              <li>
+                <a
+                  href="https://github.com/buffedlizard55-lab/based-loaded-MLB-alert-system/blob/main/docs/bases-loaded-alerts.md"
+                  >Detection contract</a
+                >
+                — the full decision table, every route to loaded bases, polling
+                budget and the honest limitations.
+              </li>
+            </ul>
+          </details>
         </aside>
       </div>
       <footer class="loaded-footer">
