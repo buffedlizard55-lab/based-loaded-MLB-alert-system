@@ -143,7 +143,12 @@ check(rules.occupancyLabel([true, true, true]), "Loaded", "All three");
  * 2. Page wiring contract
  * ======================================================================== */
 
-for (const name of ["reviews.html", "scoreboard.html", "game.html"]) {
+for (const name of [
+  "reviews.html",
+  "scoreboard.html",
+  "game.html",
+  "verification.html",
+]) {
   const html = page(name);
   ok(
     html.includes('href="assets/css/bases-loaded-strip.css"'),
@@ -1039,6 +1044,39 @@ const feedFor = (game) => ({
   ok(app.text().includes("BASES LOADED"), "The bar keeps reporting the live situation");
   await app.tick();
   check(app.toast().hidden, true, "Dismissal sticks while the same situation continues");
+}
+
+
+/* ----------------------------------------------- delay holds the watch */
+
+{
+  const rain = scheduleGame(121, {
+    inning: 10,
+    state: "Bottom",
+    outs: 1,
+    bases: [true, true, false],
+  });
+  rain.status = { abstractGameState: "Live", detailedState: "Delayed" };
+  const app = boot({ games: [rain], feeds: new Map([[121, feedFor(rain)]]) });
+  await settle();
+  ok(
+    app.text().includes("WATCH HELD"),
+    "A delayed tied bottom-10 game is reported as a held watch, not an all-clear",
+  );
+  check(app.notices.length, 0, "A delay never raises an alert");
+  check(
+    findByClass(app.strip(), "ll-loaded"),
+    null,
+    "A delay never paints the loaded alert state",
+  );
+  ok(
+    app.detail().innerHTML.includes("PAUSED"),
+    "The paused game keeps its row in the strip detail",
+  );
+  ok(
+    app.text().includes("BOT 10"),
+    "The held watch still names the inning",
+  );
 }
 
 console.log(`✓ ${checks} site-wide Loaded Late strip checks passed`);

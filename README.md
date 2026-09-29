@@ -10,6 +10,9 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 - **Alerts:** highlighted live cards, optional sound and opt-in desktop notifications. A continuous loaded situation alerts once; a confirmed exit and reload can alert again, even in the same inning.
 - **History:** immutable score, outs and runner snapshots, retained in this browser for seven days (maximum 200 entries). Refreshing the page restores history and deduplication state. Not shared across devices or a complete historical replay.
 - **Site-wide strip:** the scoreboard, replay feed (`reviews.html`) and game view mount a slim "Loaded Late" watcher, so the same one situation is tracked from whichever page of this copy you are on. The strip reuses the same rules engine, the same alert log and the same notification opt-in as the dashboard; a continuous situation never alerts twice just because you changed pages. The monitor page itself does not load it, so no page ever runs two watchers.
+- **Live slate (no manual checking):** the monitor also lists **every game on the slate** — score, half-inning, outs, and one line saying why it is or is not tracked (`BASES LOADED · ALERT`, `ON WATCH · 1st & 2nd · 1 to fill`, `TIED · TOP HALF · HOME STILL TO BAT`, `PAUSED · STILL TIED · WATCH HELD`, `NOT YET INNING 9`, …) plus the provenance and age of the numbers on that row (`live snapshot · 3s ago` or `official schedule scan`). Nothing on the page has to be worked out by hand.
+- **A delay cannot lose the situation:** a rain delay or suspension pauses play without proving the bases cleared, so the watch is **held** and labelled as paused instead of the game silently disappearing.
+- **Verified, checkable claims:** [`verification.html`](verification.html) maps every requirement of the brief to where it is implemented and how to check it, lists every route to loaded bases with its rule number, and links the official sources for each claim.
 - **Original pages preserved:** `scoreboard.html`, `game.html`, and `reviews.html`. Their legacy features remain separate from this narrow monitor.
 
 **New here?** [docs/loaded-late-quickstart.md](docs/loaded-late-quickstart.md) is the short version: which page to open, how to arm sound and notifications, what triggers an alert, and what the limits are.
@@ -83,6 +86,7 @@ node server.mjs
 # http://localhost:8000/reviews.html — replay feed + the site-wide strip
 # http://localhost:8000/reviews.html?ll-demo=1 — strip demo, no live data
 # http://localhost:8000/scoreboard.html — original scoreboard
+# http://localhost:8000/verification.html — requirements, routes and sources
 ```
 
 The server binds `0.0.0.0`; any static host (including GitHub Pages) also works.
@@ -100,16 +104,21 @@ See [the detection rules, coverage and limitations](docs/bases-loaded-alerts.md)
 ## Test the alert system
 
 ```bash
-node tools/bases-loaded-test.mjs
-node tools/bases-loaded-monitor-test.mjs
-node tools/bases-loaded-strip-test.mjs
+node tools/bases-loaded-test.mjs        # rules engine
+node tools/bases-loaded-monitor-test.mjs # monitor page controller
+node tools/bases-loaded-strip-test.mjs   # site-wide strip + page wiring
+node tools/site-links-test.mjs           # pages, links, citations, CI wiring
 ```
 
-These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. Demo data never enters live history.
+These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. Demo data never enters live history. The site suite checks that every page and every internal
+link target exists, that no page uses a root-absolute path (the copy has to work under a
+project Pages subpath), that outbound links are HTTPS and no third-party scripts are loaded,
+that the monitor and the sources page still accept no manual input, and that the project
+prompt and the verbatim Rule 5.08(b) sentence are still present in this README.
 
 ## Deploy this copy
 
-Serve this repository root on a static host — there is no build step and no server requirement. This checkout does **not** change the original `MLB-Live-PBP` deployment; publishing this copy requires turning Pages on for this repository once (Settings → Pages → *Deploy from a branch* → `main` / `/ (root)`), after which every push to `main` republishes the site at `https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/`. A ready-to-use Actions workflow is kept at [`docs/workflows/pages.yml`](docs/workflows/pages.yml) if you prefer the Actions deployment path instead; it has to be copied to `.github/workflows/` because the file lives outside that folder in this checkout. API usage remains subject to MLB's terms; this is an unofficial, personal-use project.
+Serve this repository root on a static host — there is no build step and no server requirement. This checkout does **not** change the original `MLB-Live-PBP` deployment; publishing this copy requires turning Pages on for this repository once (Settings → Pages → *Deploy from a branch* → `main` / `/ (root)`), after which every push to `main` republishes the site at `https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/`. Two workflows now ship in [`.github/workflows/`](.github/workflows/): `pages.yml` publishes this repository root to Pages on every push to `main` (it asks Pages to enable itself on the first run), and `smoke.yml` runs every deterministic suite on each push and pull request plus a nightly live-API check against `statsapi.mlb.com`. If the Pages setting is still off and the workflow cannot turn it on, the one-time fallback is **Settings → Pages → Deploy from a branch → `main` / `/ (root)`**. API usage remains subject to MLB's terms; this is an unofficial, personal-use project.
 
 ## Sources for manual review
 
@@ -123,15 +132,17 @@ carries them in its **Sources for manual review** panel):
 | One coherent status + linescore + current play snapshot (the exact projection `getAlertSnapshot` sends) | [`GET /api/v1.1/game/823001/feed/live?fields=…`](https://statsapi.mlb.com/api/v1.1/game/823001/feed/live?fields=gamePk,gameData,status,abstractGameState,detailedState,statusCode,liveData,plays,currentPlay,result,description,event,eventType,rbi,awayScore,homeScore,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,offense,defense,first,second,third,id,fullName,balls,strikes,batter,pitcher,onDeck,inHole) | Verified 2026-09-29 |
 | Unfiltered shape of the same linescore (occupancy, count, defense/offense) | [`GET /api/v1/game/823001/linescore`](https://statsapi.mlb.com/api/v1/game/823001/linescore) | Verified 2026-09-29 |
 | Same games as MLB displays them (side-by-side review) | [MLB Gameday](https://www.mlb.com/gameday) | Reference |
-| Walk-off ending — *"When the winning run is scored in the last half-inning … with the bases full"* = **Rule 5.08(b)** | [Official Baseball Rules, 2023 edition (PDF, MLB)](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [Rule 5.08 text mirror](https://www.umpirebible.com/OBR16/5.0.htm) | Text checked 2026-09-29 |
-| Extra-inning automatic runner on second (Rule 7.01(b)) | [Official Baseball Rules PDF](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [MLB-family announcement](https://www.milb.com/news/major-league-baseball-extra-inning-rule) | Text checked 2026-09-29 |
+| Walk-off ending, bases full — **Rule 5.08(b)**, quoted verbatim: *"When the winning run is scored in the last half-inning of a regulation game, or in the last half of an extra inning, as the result of a base on balls, hit batter or any other play with the bases full which forces the batter and all other runners to advance without liability of being put out, the umpire shall not declare the game ended until the runner forced to advance from third has touched home base and the batter-runner has touched first base."* | [Official Baseball Rules, 2023 edition (PDF, MLB)](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [Rule 5.08 text listing](https://baseballrulesacademy.com/official-rule/mlb/5-08-how-a-team-scores/) · [Rule 5.0 text mirror](https://www.umpirebible.com/OBR16/5.0.htm) | Text checked 2026-09-29 (all three) |
+| How a runner is added — walks, hit-by-pitch, catcher/fielder interference, uncaught third strike — **Rule 5.05(a)–(b)** | [Official Baseball Rules PDF](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [Rule 5.0 text mirror](https://www.umpirebible.com/OBR16/5.0.htm) | Text checked 2026-09-29 |
+| Routes that cannot add a runner on their own — balks (**6.02(a)**), obstruction awards (**6.01(h)**), wild pitches / passed balls (**9.13**), stolen bases (**9.07**), substitutions (**5.10**) | [Official Baseball Rules PDF](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) | Rule numbers checked 2026-09-29 |
+| Extra-inning automatic runner on second — **Rule 7.01(b)**, quoted from the 2023 summary of changes: *"Amended Rule 7.01(b) to incorporate the parameters of the Extra Innings Rule, which includes starting each half-inning following the ninth inning with a runner on second base."* | [Official Baseball Rules, 2023 edition (PDF, MLB)](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [MLB-family announcement](https://www.milb.com/news/major-league-baseball-extra-inning-rule) | Text checked 2026-09-29 |
 | Review/challenge rules inherited by the original pages | [MLB instant replay FAQ](https://www.mlb.com/news/instant-replay-review-faq/c-70189582) | Reference |
 | Our own detection contract (decision table, routes, limits) | [docs/bases-loaded-alerts.md](docs/bases-loaded-alerts.md) | This repo |
 
 ## Where this still needs work — known limitations and the next sessions' list
 
 Carried forward from the project prompt ("make suggestions for what work still needs to
-be done and any limitations"), reviewed line by line against the code on 2026-09-29:
+be done and any limitations"), reviewed line by line against the code on 2026-09-29.
 
 **Limitations standing between this and a fully reliable everyday service**
 
@@ -140,46 +151,101 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    watcher, push, SMS or email — this is the single biggest gap for "use it every day"
    (full details: [docs/bases-loaded-alerts.md](docs/bases-loaded-alerts.md) → *Notifications and practical limits*).
 2. **Polling gaps.** Schedule discovery runs every 15 s (30 s on the strip when nothing
-   is late); a late-inning game gets a fresh official snapshot every 2–5 s. A situation
-   that appears and resolves inside one gap, or upstream publication delays, can be
-   missed. Nothing is back-filled.
+   is late); a late-inning game gets a fresh official snapshot every 2 s on the monitor
+   and every 5 s on the strip. A situation that appears and resolves inside one gap, or
+   upstream publication delays, can be missed. Nothing is back-filled.
 3. **Per-browser history.** Alerts live in this browser's `localStorage` (7 days, max 200
    entries). Not cross-device, not a full historical replay of every game.
 4. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
-5. **Live end-to-end proof still pending.** Deterministic suites cover 11,520+ synthetic
-   states plus this session's verified API projections, but a live qualifying game has
-   not yet been observed end-to-end from this deployment — the next live tied bottom-9+
-   game is the real acceptance test (network to `statsapi.mlb.com` is blocked inside the
-   development sandbox, so `tools/smoke-test.mjs` only runs with real egress, e.g. in CI).
-6. **Cross-page quiet window is 90 seconds by design.** Another page's recent alert
+5. **Live end-to-end proof still pending.** Deterministic suites cover 11,727 rule states
+   plus 74 monitor, 160 strip and 253 site checks (counts as of 2026-09-29), but a live qualifying game has not yet
+   been observed end-to-end from this deployment — the next live tied bottom-9+ game is
+   the real acceptance test.
+6. **Development-sandbox network limit (flagged, open).** The sandbox used for the
+   2026-09-29 session cannot reach `statsapi.mlb.com` (TLS egress is blocked: curl exits
+   with `SSL_ERROR_SYSCALL`, HTTP 000). The API projections documented here were verified
+   in the session earlier the same day and must be re-confirmed from a networked machine
+   or by the CI smoke workflow. **No live-alert claim in this repository is based on a
+   response that was not fetched from the official API.**
+7. **Cross-page quiet window is 90 seconds by design.** Another page's recent alert
    silences this page's chime for the same game + inning; a confirmed exit and reload
    still alerts (observer-scoped). If field use shows double beeps or missed beeps, tune
    `QUIET_MS` / `CROSS_PAGE_QUIET_MS` in the two controllers.
 
 **Suggested work, in priority order (next session / the session after)**
 
-1. **Ship it:** enable GitHub Pages for this repo (Settings → Pages → Deploy from a
-   branch → `main` / `/ (root)`), open the deployed monitor, and walk the UI once.
-   Flagged irregularity: the in-session GitHub API attempt was rejected with HTTP 403
-   (*Resource not accessible by integration*) — the automation token lacks the Pages
-   permission, so this stays a one-time manual Settings click for the repo owner.
+1. **Confirm the published site.** `.github/workflows/pages.yml` now deploys this
+   repository root to Pages on every push to `main` and asks Pages to enable itself on
+   the first run. Flagged irregularity to check: on 2026-09-29 the published URL still
+   returned HTTP 404 (*There isn't a GitHub Pages site here*) and the automation token
+   was refused with HTTP 403 (*Resource not accessible by integration*) when trying to
+   enable Pages directly, so the one-time **Settings → Pages → Deploy from a branch →
+   `main` / `/ (root)`** click may still be needed. Verify the workflow run on `main` and
+   the live URL before assuming it is up.
 2. **Live-fire verification:** on the next tied game entering bot 9+, keep the monitor
    visible and record watch → load → chime → notification with the game link as proof.
+   The new live slate makes this easy to document (the row shows the exact snapshot age).
 3. **Always-on delivery (the big one):** a small Node watcher reusing
    `assets/js/bases-loaded-core.js` verbatim (it is dependency-free on purpose) that
    pushes Web Push notifications when nobody has a tab open.
 4. **Wider alert context** (due-up hitters, pitcher line) only after verifying the
    extra projection fields against a live payload first — never widen a projection on
-   assumption.
+   assumption. The extra-inning `linescore.offense` shape used by the slate board is the
+   same occupied-base object already verified for the alert snapshot; anything new must
+   be fetched and checked the same way.
 5. **History export** (CSV/JSON) and a shareable per-alert link.
-6. **CI:** copy [`docs/workflows/pages.yml`](docs/workflows/pages.yml) and
-   [`docs/workflows/smoke.yml`](docs/workflows/smoke.yml) into `.github/workflows/` so
-   every push runs the deterministic suites and a nightly live-API smoke check.
-7. **Mobile daily-driver polish:** installable PWA manifest, vibration on alert.
+6. **Mobile daily-driver polish:** installable PWA manifest, vibration on alert.
 
----
+## Session log — 2026-09-29 (three verification passes)
+
+Kept in the repository on purpose: the brief asks for the work to be verified line by
+line, so what was checked, what was corrected and what is still open is written down.
+
+**Pass 1 — implement and verify**
+
+- Reviewed the whole alert stack against the brief: `bases-loaded-core.js` (rules),
+  `bases-loaded.js` (monitor), `bases-loaded-strip.js` (site-wide strip),
+  `api.js → getAlertSnapshot`, the two identical monitor entrypoints, the detection
+  contract, and the three deterministic suites.
+- Added the **live slate** (every game, its tracking reason, and the provenance/age of
+  each number), the **held watch** for delays and suspensions, and **notification-click
+  focus** that highlights the alerting card without navigating away from the monitor.
+- Added [`verification.html`](verification.html) — requirement-by-requirement mapping,
+  every route to loaded bases with its rule number, the official data sources, the
+  polling budget, the limitations and this log.
+- Added `tools/site-links-test.mjs` (253 checks: pages, links, structure, citations,
+  no-manual-input, CI wiring) and moved both workflows into
+  `.github/workflows/` so CI runs the suites on every push.
+
+**Pass 2 — bugs, missing requirements, edge cases**
+
+- Fixed: the slate gave an early-inning live game the label *awaiting the first live
+  snapshot* instead of *not yet inning 9*, and a no-snapshot late game was labelled as
+  unknown rather than *late inning · awaiting the first live snapshot*.
+- Fixed the mismatch between the tied top half label and the actual half-inning state
+  (top / middle / home-half-over are now three distinct, honest labels).
+- Confirmed the held-watch path: a delayed tied game in the 10th is neither alerted nor
+  dropped, and the rules engine's `isPaused` helper is now shared by both front ends
+  instead of being duplicated.
+- Added coverage for the new paths: monitor suite 54 → 74 checks, strip suite 151 → 160,
+  including the paused-game row, the slate ordering/provenance, and that a game with a
+  live snapshot is never left in an unknown state.
+
+**Pass 3 — re-check against the brief, improve accuracy**
+
+- **Irregularity found and fixed (correctness):** the README quoted Rule 5.08(b) as
+  *"When the winning run is scored in the last half-inning … with the bases full"*, which
+  is a paraphrase presented as a quotation. The README and the site now carry the
+  **verbatim** sentence, and `tools/site-links-test.mjs` fails if the two ever differ.
+- **Citations verified** against live official/text sources on 2026-09-29: Rule 5.08(b)
+  (2023 OBR PDF + Rule 5.08 text listing), Rule 7.01(b) extra-innings runner (2023 OBR
+  summary of changes), Rule 5.05(a)–(b) (walks, hit by pitch, catcher/fielder
+  interference, uncaught third strike), 6.01(h), 6.02(a), 9.07, 9.13, 5.10.
+- **Flagged irregularities (open):** the development sandbox cannot reach the MLB API
+  (limitation 6 above), and the published Pages URL is still 404 with the automation
+  token refused for the Pages endpoint (suggested work 1 above).
 
 ## Original MLB Live PBP documentation
 
@@ -433,21 +499,30 @@ for archived games the request is scoped to the feed's game season.
 
 ```
 .
-├── index.html                 # Scoreboard page (all games for a date)
-├── game.html                  # Game page (?gamePk=<id>)
-├── reviews.html               # All-games Replay Feed (live chat-style review feed)
+├── index.html                 # ALERT MONITOR (tied / bases-loaded / bottom 9+)
+├── bases-loaded.html          # identical second entrypoint for the monitor
+├── verification.html          # requirements, routes to loaded bases, sources
+├── game.html                  # Game page (?gamePk=<id>) — mounts the strip
+├── reviews.html               # All-games Replay Feed — mounts the strip
+├── scoreboard.html            # Original scoreboard — mounts the strip
 ├── 404.html
 ├── assets/
-│   ├── css/style.css          # Dark Gameday-style theme (responsive)
+│   ├── css/
+│   │   ├── style.css                 # inherited dark Gameday theme
+│   │   ├── bases-loaded.css          # monitor + documentation styling
+│   │   └── bases-loaded-strip.css    # site-wide strip styling
 │   └── js/
-│       ├── api.js             # MLB StatsAPI client (fetch, retry, fallbacks, formatters)
-│       ├── ui.js              # Shared UI: team logos, colors, count dots, runners diamond
-│       ├── reviews.js         # Challenge & replay review parser (Manager, Crew Chief, ABS)
-│       ├── reviews-feed.js    # All-games Replay Feed logic (diff helpers + page)
-│       ├── scoreboard.js      # Scoreboard page logic
-│       ├── props.js           # Two-sided hit model, stat cache, Props & Matchup tab
-│       └── game.js            # Game page logic (live "at bat" module, linescore, box, PBP)
-└── docs/workflows/            # Optional GitHub Actions files (see deployment section)
+│       ├── api.js                    # MLB StatsAPI client (incl. getAlertSnapshot)
+│       ├── bases-loaded-core.js      # THE RULES: tied + loaded + bottom 9+ (shared)
+│       ├── bases-loaded.js           # monitor controller (slate, alerts, history)
+│       ├── bases-loaded-strip.js     # site-wide strip controller (other pages)
+│       ├── ui.js                     # inherited shared UI helpers
+│       ├── reviews.js / reviews-feed.js / scoreboard.js / props.js / game.js
+│       └── …
+├── tools/                     # deterministic test suites (no packages, no network)
+├── docs/                      # detection contract, verification reports, quickstart
+├── .github/workflows/         # pages.yml (publish) + smoke.yml (checks in CI)
+└── server.mjs                 # optional local static + replay-log server
 ```
 
 ## Run it locally
@@ -529,19 +604,17 @@ with no build step and no workflow permissions:
 
 ### Optional: Actions-based deployment & CI smoke test
 
-The repo's Pages setup doesn't require Actions. If you'd rather deploy via GitHub
-Actions (and/or run the nightly API smoke test), ready-to-use workflow files are in
-[`docs/workflows/`](docs/workflows/):
+The repository already ships both workflows in [`.github/workflows/`](.github/workflows/)
+in this copy, so there is nothing to copy:
 
-- `pages.yml` — deploys to Pages on every push to `main` (requires the repo setting
-  **Pages → Source → "GitHub Actions"** instead of branch deployment).
-- `smoke.yml` — runs the deterministic two-sided model checks and a nightly
-  check that the upstream MLB StatsAPI still matches our parsers; run it anytime
-  from **Actions** with "Run workflow".
+- `pages.yml` — publishes the repository root to Pages on every push to `main`
+  (**Settings → Pages → Source → "GitHub Actions"**, or let the workflow's
+  `enablement` step turn Pages on the first time it runs).
+- `smoke.yml` — runs every deterministic suite (rules, monitor, strip, site
+  integrity, replay review, scoring changes) on each push and pull request, plus a
+  nightly live check that the upstream MLB StatsAPI still matches our parsers.
 
-To use them, copy the file contents into `.github/workflows/` in the repo (the GitHub
-web UI's *Add file* is the easiest way), then go to **Settings → Pages → Source →
-GitHub Actions**.
+The branch-deployment route below still works and needs no workflow permissions at all.
 
 ### Customizing
 

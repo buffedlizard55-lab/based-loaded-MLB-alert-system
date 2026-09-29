@@ -23,6 +23,13 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # The site is published from this workflow rather than a branch
+          # folder. enablement lets the first run turn Pages on for the repo
+          # when the repository owner has not clicked it yet; if the token
+          # lacks that permission the run fails loudly instead of publishing
+          # something unexpected.
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

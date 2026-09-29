@@ -11,7 +11,9 @@
   const WEEK = 7 * 86400000,
     DISCOVERY_MS = 15000,
     SCAN_MS = 2000,
-    QUIET_MS = 90000;
+    QUIET_MS = 90000,
+    STALE_MS = 12000,
+    HIGHLIGHT_MS = 8000;
   // Identifies this page instance in the shared log, so only *other* pages
   // (the site-wide strip, or another tab) can suppress a chime. A confirmed
   // exit and reload recorded by this same page still alerts again.
@@ -21,6 +23,8 @@
     states = {},
     games = new Map(),
     snapshots = new Map();
+  let highlightPk = null,
+    highlightUntil = 0;
   let busy = false,
     timer,
     discoveryAt = 0,
@@ -78,6 +82,213 @@
     }
     return s;
   };
+
+  /* ------------------------------------------------------------- live slate
+   * "No manual checking" is the point of this project, so the page also shows
+   * the whole slate it is scanning and why each game is (or is not) tracked.
+   * Everything on a row is either read straight from the official schedule
+   * scan, or from that game's own coherent live snapshot — never inferred.
+   * A game with no coherent snapshot yet is labelled as such instead of being
+   * given a state we have not observed.
+   */
+
+  // One implementation, shared with the site-wide strip (core rules).
+  const isPausedStatus = (status) => rules.isPaused(status);
+
+  const ageText = (stamp, now = Date.now()) => {
+    if (!Number.isFinite(stamp)) return "";
+    const seconds = Math.max(0, Math.round((now - stamp) / 1000));
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    return `${minutes}m ago`;
+  };
+
+  /** Official score for one side: coherent snapshot first, then schedule. */
+  function scoreOfSide(game, result, side) {
+    if (result && Number.isInteger(result[side])) return result[side];
+    const direct = game.teams?.[side]?.score;
+    if (Number.isInteger(direct)) return direct;
+    const runs = game.linescore?.teams?.[side]?.runs;
+    return Number.isInteger(runs) ? runs : null;
+  }
+
+  /** "Bot 9" / "Mid 10" / "Final" — only from fields the payload actually has. */
+  function halfText(game) {
+    const ls = game.linescore || {};
+    const inning = ls.currentInning;
+    if (game.status?.abstractGameState === "Final")
+      return Array.isArray(ls.innings) && ls.innings.length > 9
+        ? `Final/${ls.innings.length}`
+        : "Final";
+    if (!Number.isInteger(inning)) return "";
+    const state = String(ls.inningState || "").toLowerCase();
+    const word =
+      state === "top"
+        ? "Top"
+        : state === "bottom"
+          ? "Bot"
+          : state === "middle"
+            ? "Mid"
+            : state === "end"
+              ? "End"
+              : "";
+    return `${word ? `${word} ` : ""}${inning}`;
+  }
+
+  /**
+   * Why this game is on the page, in one label. Ranks double as the sort
+   * order, so the games that matter are always at the top of the slate.
+   */
+  function boardPhase(game, entry, delayed) {
+    const result = entry?.result || null;
+    const error = entry?.error || "";
+    if (result?.loaded && !error)
+      return { rank: 0, text: "BASES LOADED · ALERT", cls: "tag-alert" };
+    if (result?.watching && !error) {
+      const occupancy = rules.occupancyLabel(result.bases.map(Boolean));
+      const toFill = 3 - result.runnersOn;
+      return {
+        rank: 1,
+        text: `ON WATCH · ${occupancy} · ${toFill} to fill`,
+        cls: "tag-watch",
+      };
+    }
+    if (delayed)
+      return {
+        rank: 3,
+        text: result?.tied && result.inning >= 9
+          ? "PAUSED · STILL TIED · WATCH HELD"
+          : "PAUSED",
+        cls: "tag-paused",
+      };
+    if (result && !error) {
+      if (result.tied && result.inning >= 9) {
+        const state = String(game.linescore?.inningState || "").toLowerCase();
+        if (state === "top")
+          return {
+            rank: 2,
+            text: "TIED · TOP HALF · HOME STILL TO BAT",
+            cls: "tag-tied",
+          };
+        if (state === "middle")
+          return {
+            rank: 2,
+            text: "TIED · CHANGE OVER · HOME HALF PENDING",
+            cls: "tag-tied",
+          };
+        return {
+          rank: 2,
+          text: "TIED · HOME HALF OVER · WATCH CONTINUES",
+          cls: "tag-tied",
+        };
+      }
+      if (result.inning >= 9)
+        return { rank: 2, text: "INNING 9+ · NOT TIED", cls: "tag-late" };
+      return { rank: 4, text: "NOT YET INNING 9", cls: "tag-early" };
+    }
+    if (entry?.error === "Monitoring paused")
+      return { rank: 5, text: "PAUSED TAB · LAST STATE HELD", cls: "tag-paused" };
+    if (game.status?.abstractGameState === "Final")
+      return { rank: 6, text: "FINAL", cls: "tag-final" };
+    if (game.status?.abstractGameState === "Preview")
+      return { rank: 6, text: "SCHEDULED", cls: "tag-scheduled" };
+    // Live, but no coherent snapshot yet: only claim what the schedule shows.
+    if (Number.isInteger(game.linescore?.currentInning) && game.linescore.currentInning >= 9)
+      return {
+        rank: 2,
+        text: "LATE INNING · AWAITING THE FIRST LIVE SNAPSHOT",
+        cls: "tag-late",
+      };
+    return { rank: 4, text: "NOT YET INNING 9", cls: "tag-early" };
+  }
+
+  function boardRow(game, now) {
+    const entry = snapshots.get(game.gamePk);
+    const result = entry?.result || null;
+    // A paused/delayed game is a live game whose play is stopped; evaluate()
+    // deliberately reports no active situation for it, so read the status.
+    const delayed = isPausedStatus(game.status);
+    const phase = boardPhase(game, entry, delayed);
+    const away = game.teams?.away?.team?.name || "Away";
+    const home = game.teams?.home?.team?.name || "Home";
+    const awayScore = scoreOfSide(game, result, "away");
+    const homeScore = scoreOfSide(game, result, "home");
+    const score =
+      awayScore === null || homeScore === null
+        ? "—"
+        : `${awayScore}–${homeScore}`;
+    const outs =
+      result && !entry?.error && Number.isInteger(result.outs) && result.outs < 3
+        ? `${result.outs} out${result.outs === 1 ? "" : "s"}`
+        : Number.isInteger(game.linescore?.outs) &&
+            game.linescore.outs < 3 &&
+            game.status?.abstractGameState === "Live" &&
+            !delayed
+          ? `${game.linescore.outs} out${game.linescore.outs === 1 ? "" : "s"}`
+          : "";
+    // A scheduled game has no half-inning yet, so show its first pitch instead.
+    const firstPitch =
+      typeof MLB.localTime === "function" ? MLB.localTime(game.gameDate) : "";
+    const fallbackWhen =
+      game.status?.abstractGameState === "Preview"
+        ? [firstPitch, "first pitch"].filter(Boolean).join(" ")
+        : "";
+    const when =
+      [halfText(game), outs].filter(Boolean).join(" · ") || fallbackWhen;
+    // Provenance is part of the row: you can always tell where a number came
+    // from and how old it is.
+    const source = !entry
+      ? demo
+        ? "synthetic (demo)"
+        : game.status?.abstractGameState === "Live"
+          ? "official schedule scan"
+          : "official schedule"
+      : entry.error
+        ? `${entry.error} · last confirmed ${ageText(entry.at, now)}`
+        : delayed
+          ? `snapshot · play paused · ${ageText(entry.at, now)}`
+          : demo
+            ? `synthetic snapshot · ${ageText(entry.at, now)}`
+            : `live snapshot · ${ageText(entry.at, now)}`;
+    return `<div class="board-row ${phase.cls}">
+      <span class="board-teams">${escape(away)} <b>${escape(score)}</b> ${escape(home)}</span>
+      <span class="board-when">${escape(when || "—")}</span>
+      <span class="board-tag">${escape(phase.text)}</span>
+      <span class="board-source">${escape(source)}</span>
+      ${demo ? "" : `<a href="game.html?gamePk=${encodeURIComponent(game.gamePk)}">open ↗</a>`}
+    </div>`;
+  }
+
+  function renderBoard() {
+    const node = $("board");
+    if (!node) return;
+    const now = Date.now();
+    const list = [...games.values()].map((game) => ({
+      game,
+      phase: boardPhase(game, snapshots.get(game.gamePk), isPausedStatus(game.status)),
+    }));
+    list.sort(
+      (a, b) =>
+        a.phase.rank - b.phase.rank ||
+        (b.game.linescore?.currentInning || 0) -
+          (a.game.linescore?.currentInning || 0),
+    );
+    const live = [...games.values()].filter(
+      (game) => game.status?.abstractGameState === "Live",
+    ).length;
+    node.innerHTML = list.length
+      ? list.map(({ game }) => boardRow(game, now)).join("")
+      : empty(
+          "No games on the slate yet",
+          "The official schedule scan fills this list every 15 seconds.",
+          "◇",
+        );
+    const summary = $("board-summary");
+    if (summary)
+      summary.textContent = demo
+        ? `DEMO · ${games.size} synthetic games · no live requests, no history writes`
+        : `${games.size} game${games.size === 1 ? "" : "s"} on radar · ${live} live · schedule scan 15s · late innings 2s · updated ${time(now)}`;
+  }
 
   function feedback(message) {
     $("feedback").textContent = message;
@@ -204,6 +415,29 @@
     }
   }
 
+  /**
+   * Clicking the desktop notification brings the monitor back into view and
+   * highlights the card for that game. It deliberately does not navigate: the
+   * monitoring tab must survive, so the alert is shown in place.
+   */
+  function focusGame(gamePk) {
+    highlightPk = gamePk;
+    highlightUntil = Date.now() + HIGHLIGHT_MS;
+    try {
+      window.focus();
+    } catch (_) {}
+    render();
+    try {
+      $("current")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    } catch (_) {}
+    try {
+      setTimeout(() => {
+        highlightPk = null;
+        render();
+      }, HIGHLIGHT_MS);
+    } catch (_) {}
+  }
+
   function announce(event) {
     if (
       notificationsEnabled &&
@@ -228,8 +462,8 @@
           { body, tag: event.id },
         );
         notice.onclick = () => {
-          window.focus();
           notice.close();
+          focusGame(event.gamePk);
         };
       } catch (_) {
         feedback(
@@ -273,7 +507,7 @@
   }
 
   function card(game, result, options = {}) {
-    const { historical, stamp, error } = options;
+    const { historical, stamp, error, highlight } = options;
     const isLoaded = result.loaded && !error;
     const away = game.teams?.away?.team?.name || "Away",
       home = game.teams?.home?.team?.name || "Home";
@@ -361,7 +595,7 @@
         </div>`
       : "";
 
-    return `<article class="alert-card ${historical ? "history-card" : isLoaded ? "loaded" : ""} ${isLoaded && result.tension >= 5 ? "max-tension" : ""}">
+    return `<article class="alert-card ${historical ? "history-card" : isLoaded ? "loaded" : ""} ${isLoaded && result.tension >= 5 ? "max-tension" : ""}${highlight ? " card-highlight" : ""}">
       <div class="card-top">
         <span class="card-badge">${badgeText}</span>
         <span class="card-time">${historical ? escape(new Date(stamp).toLocaleDateString([], { month: "short", day: "numeric" })) + " · " : ""}${escape(time(stamp))}</span>
@@ -392,11 +626,28 @@
       (s) => s.result.watching && !s.result.loaded && !s.error,
     );
     const unconfirmed = entries.filter((s) => s.error);
+    // A delay or suspension pauses play; it never proves the bases cleared.
+    // The watch is held (see rules.observe), so the pause is shown, not hidden.
+    const pausedLate = entries.filter(
+      (s) =>
+        !s.error &&
+        isPausedStatus(s.game.status) &&
+        s.result.known &&
+        s.result.tied &&
+        Number.isInteger(s.result.inning) &&
+        s.result.inning >= 9,
+    );
+    const now = Date.now();
+    if (highlightPk && now > highlightUntil) highlightPk = null;
 
     $("games-count").textContent = discoveryAt || demo ? games.size : "—";
     $("watch-count").textContent =
       discoveryAt || demo ? current.length + watching.length : "—";
     $("active-count").textContent = discoveryAt || demo ? current.length : "—";
+    $("tied-count").textContent =
+      discoveryAt || demo
+        ? current.length + watching.length + pausedLate.length
+        : "—";
     $("history-count").textContent = history.length;
 
     // Tension summary: count max-tension alerts
@@ -407,7 +658,14 @@
     }
 
     $("current").innerHTML = current.length
-      ? current.map((s) => card(s.game, s.result, { stamp: s.at })).join("")
+      ? current
+          .map((s) =>
+            card(s.game, s.result, {
+              stamp: s.at,
+              highlight: s.game.gamePk === highlightPk,
+            }),
+          )
+          .join("")
       : empty(
           unconfirmed.length || scheduleError
             ? "Live status is not fully confirmed"
@@ -418,7 +676,23 @@
         );
 
     $("watch").innerHTML =
-      watching.map((s) => card(s.game, s.result, { stamp: s.at })).join("") +
+      watching
+        .map((s) =>
+          card(s.game, s.result, {
+            stamp: s.at,
+            highlight: s.game.gamePk === highlightPk,
+          }),
+        )
+        .join("") +
+        pausedLate
+          .map(
+            (s) => `<div class="alert-empty paused-note">
+              <strong>PAUSED · ${escape(s.game.teams?.away?.team?.name || "Away")} at ${escape(s.game.teams?.home?.team?.name || "Home")}</strong>
+              Tied ${escape(s.result.away)}–${escape(s.result.home)} in the ${s.result.inning}th, ${escape(String(s.game.status?.detailedState || "delayed"))}.
+              The watch window is held, so resuming play cannot create a duplicate alert and the situation cannot be lost while play is stopped.
+            </div>`,
+          )
+          .join("") +
         unconfirmed
           .map(
             (s) =>
@@ -433,6 +707,8 @@
           ? "Matching games are shown in Live alerts above."
           : "The watch begins when a tied game enters the bottom of the 9th or any later inning.",
       );
+
+    renderBoard();
 
     $("history").innerHTML = history.length
       ? history
@@ -851,6 +1127,38 @@
     },
   ];
 
+  // A few fixed slate rows so the demo also shows how non-qualifying games are
+  // labelled. They never change state and never produce an alert.
+  const demoSlate = [
+    {
+      gamePk: 999002,
+      status: { abstractGameState: "Live", detailedState: "In Progress" },
+      teams: {
+        away: { team: { name: "Demo Early Visitors" }, score: 1 },
+        home: { team: { name: "Demo Early Home" }, score: 0 },
+      },
+      linescore: { currentInning: 4, inningState: "Top", outs: 1 },
+    },
+    {
+      gamePk: 999003,
+      status: { abstractGameState: "Live", detailedState: "Delayed" },
+      teams: {
+        away: { team: { name: "Demo Rain Visitors" }, score: 2 },
+        home: { team: { name: "Demo Rain Home" }, score: 2 },
+      },
+      linescore: { currentInning: 10, inningState: "Bottom", outs: 1 },
+    },
+    {
+      gamePk: 999004,
+      status: { abstractGameState: "Final", detailedState: "Final" },
+      teams: {
+        away: { team: { name: "Demo Final Visitors" }, score: 3 },
+        home: { team: { name: "Demo Final Home" }, score: 6 },
+      },
+      linescore: { currentInning: 9, inningState: "End", outs: 3, innings: [] },
+    },
+  ];
+
   function showDemo(advance = true) {
     const step = demoSteps[demoStep];
     const game = {
@@ -946,7 +1254,7 @@
     setInterval(() => {
       let changed = false;
       for (const entry of snapshots.values()) {
-        if (!entry.error && Date.now() - entry.at > 12000) {
+        if (!entry.error && Date.now() - entry.at > STALE_MS) {
           entry.error = "Snapshot is stale — awaiting fresh MLB data";
           changed = true;
         }
@@ -958,6 +1266,7 @@
   updateNotificationButton();
   if (demo) {
     $("demo-banner").hidden = false;
+    for (const game of demoSlate) games.set(game.gamePk, game);
     showDemo();
   } else {
     render();

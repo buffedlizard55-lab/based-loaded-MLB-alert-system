@@ -355,8 +355,13 @@
         { body: context, tag: event.id },
       );
       notice.onclick = () => {
-        window.focus();
         notice.close();
+        // Returning from the notification clears a previous dismissal so the
+        // alert card is visible again; the page is not navigated away, so the
+        // watcher keeps running.
+        dismissed = false;
+        render();
+        window.focus();
       };
     } catch (_) {
       // Some browsers refuse the constructor; the on-page alert remains.
@@ -533,6 +538,15 @@
       (s) => s.result.watching && !s.result.loaded && !s.error,
     );
     const stale = entries.filter((s) => s.error);
+    // Delay / suspension: not an alert, not an all-clear. Shown, never dropped.
+    const heldPaused = entries.filter(
+      (s) =>
+        !s.error &&
+        rules.isPaused(s.game.status) &&
+        s.result.known &&
+        s.result.tied &&
+        s.result.inning >= 9,
+    );
     const paused = document.hidden;
 
     strip.node.className = `ll-strip ${
@@ -569,6 +583,12 @@
             )})`,
         )
         .join(" · ")}${watching.length > 3 ? ` · +${watching.length - 3} more` : ""}`;
+    } else if (heldPaused.length) {
+      strip.state.innerHTML = `${lead}<strong>WATCH HELD · ${escape(
+        `BOT ${heldPaused[0].result.inning}`,
+      )}</strong> · ${escape(scoreLine(heldPaused[0].game, heldPaused[0].result))} · play paused (${escape(
+        String(heldPaused[0].game.status?.detailedState || "delay"),
+      )}) — the tied watch survives the stoppage`;
     } else if (!lastScanAt && !discoveryAt) {
       strip.state.innerHTML = `${lead}starting — reading the official MLB schedule`;
     } else if (discoveryFailed) {
@@ -589,50 +609,62 @@
 
     // Detail rows: every tracked game, so partial progress toward loaded bases
     // is visible (1st, 1st & 2nd, 2nd & 3rd, ...) instead of a binary state.
-    strip.detail.innerHTML = loaded.length
-      ? loaded
-          .map(
-            (s) => `<div class="ll-row ll-row-loaded">
-              <span class="ll-row-badge">BASES LOADED</span>
-              <span class="ll-row-text"><strong>${escape(scoreLine(s.game, s.result))}</strong> · ${escape(situationLine(s.result))}${
-                s.result.batter
-                  ? ` · ${escape(s.result.batter.name)} vs ${escape(s.result.pitcher?.name || "TBD")}`
-                  : ""
-              }</span>
-              <span class="ll-row-tension ll-tension-${s.result.tension}">${escape(
-                s.result.tensionLabel,
-              )} ${s.result.tension}/5</span>
-              ${
-                s.result.lastEvent
-                  ? `<span class="ll-row-note">loaded on: ${escape(s.result.lastEvent)}</span>`
-                  : ""
-              }
-              <a class="ll-row-link" href="game.html?gamePk=${encodeURIComponent(
-                s.game.gamePk,
-              )}">open game ↗</a>
-            </div>`,
-          )
-          .join("")
-      : watching.length
-        ? watching
-            .map(
-              (s) => `<div class="ll-row">
-                <span class="ll-row-badge">ON WATCH</span>
-                <span class="ll-row-text"><strong>${escape(scoreLine(s.game, s.result))}</strong> · ${escape(situationLine(s.result))}</span>
-                <span class="ll-row-note">${escape(
-                  s.result.runnersOn
-                    ? `${s.result.runnersOn} on · ${3 - s.result.runnersOn} base${
-                        3 - s.result.runnersOn === 1 ? "" : "s"
-                      } to fill`
-                    : "no runners yet",
-                )}</span>
-                <a class="ll-row-link" href="game.html?gamePk=${encodeURIComponent(
-                  s.game.gamePk,
-                )}">open game ↗</a>
-              </div>`,
-            )
-            .join("")
-        : "";
+    const loadedRows = loaded
+      .map(
+        (s) => `<div class="ll-row ll-row-loaded">
+          <span class="ll-row-badge">BASES LOADED</span>
+          <span class="ll-row-text"><strong>${escape(scoreLine(s.game, s.result))}</strong> · ${escape(situationLine(s.result))}${
+            s.result.batter
+              ? ` · ${escape(s.result.batter.name)} vs ${escape(s.result.pitcher?.name || "TBD")}`
+              : ""
+          }</span>
+          <span class="ll-row-tension ll-tension-${s.result.tension}">${escape(
+            s.result.tensionLabel,
+          )} ${s.result.tension}/5</span>
+          ${
+            s.result.lastEvent
+              ? `<span class="ll-row-note">loaded on: ${escape(s.result.lastEvent)}</span>`
+              : ""
+          }
+          <a class="ll-row-link" href="game.html?gamePk=${encodeURIComponent(
+            s.game.gamePk,
+          )}">open game ↗</a>
+        </div>`,
+      )
+      .join("");
+    const watchRows = watching
+      .map(
+        (s) => `<div class="ll-row">
+          <span class="ll-row-badge">ON WATCH</span>
+          <span class="ll-row-text"><strong>${escape(scoreLine(s.game, s.result))}</strong> · ${escape(situationLine(s.result))}</span>
+          <span class="ll-row-note">${escape(
+            s.result.runnersOn
+              ? `${s.result.runnersOn} on · ${3 - s.result.runnersOn} base${
+                  3 - s.result.runnersOn === 1 ? "" : "s"
+                } to fill`
+              : "no runners yet",
+          )}</span>
+          <a class="ll-row-link" href="game.html?gamePk=${encodeURIComponent(
+            s.game.gamePk,
+          )}">open game ↗</a>
+        </div>`,
+      )
+      .join("");
+    const pausedRows = heldPaused
+      .map(
+        (s) => `<div class="ll-row ll-row-paused">
+          <span class="ll-row-badge">PAUSED</span>
+          <span class="ll-row-text"><strong>${escape(scoreLine(s.game, s.result))}</strong> · ${escape(situationLine(s.result))} · play paused (${escape(
+            String(s.game.status?.detailedState || "delay"),
+          )})</span>
+          <span class="ll-row-note">watch held — resuming cannot re-alert</span>
+          <a class="ll-row-link" href="game.html?gamePk=${encodeURIComponent(
+            s.game.gamePk,
+          )}">open game ↗</a>
+        </div>`,
+      )
+      .join("");
+    strip.detail.innerHTML = loadedRows + watchRows + pausedRows;
     strip.detail.hidden = !strip.detail.innerHTML;
 
     // Toast: the loud, readable alert. It follows the live snapshots, so the

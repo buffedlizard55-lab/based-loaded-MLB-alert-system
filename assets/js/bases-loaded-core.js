@@ -24,6 +24,19 @@ const BasesLoadedRules = (() => {
   }
 
   /**
+   * A live game whose play is stopped (rain delay, suspension). It is neither
+   * an active situation nor an all-clear: `observe` holds the episode so that
+   * resuming cannot create a duplicate, and both front ends label the pause
+   * instead of silently dropping the game from the page.
+   */
+  function isPaused(status) {
+    return (
+      status?.abstractGameState === "Live" &&
+      /delay|suspend/i.test(status?.detailedState || "")
+    );
+  }
+
+  /**
    * Tension level calculation.
    * In a tied, bases-loaded, bottom 9+ situation, tension rises with:
    * - More outs (2 outs = last chance)
@@ -336,6 +349,7 @@ const BasesLoadedRules = (() => {
     snapshotGame,
     scheduleDates,
     isLive,
+    isPaused,
     calculateTension,
     tensionLabel,
     scanTarget,

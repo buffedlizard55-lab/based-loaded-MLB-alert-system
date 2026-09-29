@@ -21,7 +21,8 @@
       <nav aria-label="Main navigation">
         <a href="bases-loaded.html" aria-current="page">Situation monitor</a
         ><a href="scoreboard.html">Scoreboard ↗</a
-        ><a href="reviews.html">Replay feed ↗</a>
+        ><a href="reviews.html">Replay feed ↗</a
+        ><a href="verification.html">Requirements &amp; sources ↗</a>
       </nav>
     </header>
     <main class="loaded-main">
@@ -101,6 +102,10 @@
           <span>IN THE WATCH WINDOW</span><strong id="watch-count">—</strong
           ><small>Tied · entering / in bottom 9+</small>
         </div>
+        <div class="metric-tied">
+          <span>TIED · BOT 9+</span><strong id="tied-count">—</strong
+          ><small>Tied in a half that can end it</small>
+        </div>
         <div class="metric-active">
           <span>BASES-LOADED NOW</span><strong id="active-count">—</strong
           ><small>Exact situation matched</small>
@@ -134,7 +139,21 @@
           </section>
           <section class="monitor-section">
             <div class="section-heading">
-              <h2><span class="section-number">03</span> Alert history</h2>
+              <h2><span class="section-number">03</span> Live slate</h2>
+              <span class="section-tag">EVERY GAME WE SCAN</span>
+            </div>
+            <p class="section-note">
+              Every game on the slate, why it is or is not tracked, and where each
+              number came from — no manual checking. The schedule scan refreshes
+              every 15 seconds; a live game in the 9th or later gets its own
+              coherent official snapshot every 2 seconds.
+            </p>
+            <div id="board" class="board"></div>
+            <p id="board-summary" class="board-summary"></p>
+          </section>
+          <section class="monitor-section">
+            <div class="section-heading">
+              <h2><span class="section-number">04</span> Alert history</h2>
               <span class="section-tag">OBSERVED, NOT PREDICTED</span>
             </div>
             <div id="history"></div>
@@ -172,6 +191,9 @@
             </ol>
             <a class="demo-link" href="?demo=1"
               >Try a guided demo <span>↗</span></a
+            >
+            <a class="demo-link" href="verification.html"
+              >Requirements, routes &amp; sources <span>↗</span></a
             >
           </section>
           <details class="coverage" open>
@@ -240,11 +262,13 @@
               <li>
                 <a
                   href="https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf"
-                  >Official Baseball Rules (PDF, MLB)</a
+                  >Official Baseball Rules, 2023 edition (PDF, MLB)</a
                 >
-                — walk-off ending (Rule 5.08(b): winning run scored in the last
-                half-inning with the bases full) and the extra-innings automatic
-                runner (Rule 7.01(b)).
+                — the game-ending bases-full play (Rule 5.08(b)) and the
+                extra-innings automatic runner on second (Rule 7.01(b)). The
+                quoted rule text, with the other rules behind every route to
+                loaded bases, is on
+                <a href="verification.html">Requirements &amp; sources</a>.
               </li>
               <li>
                 <a
