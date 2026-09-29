@@ -39,6 +39,15 @@ self.addEventListener("push", (event) => {
     renotify: true,
     requireInteraction: true,
     data: { url: payload.url || "" },
+    // The same buzz as BasesLoadedRules.vibratePattern in
+    // assets/js/bases-loaded-core.js. A service worker cannot import that file,
+    // so the numbers are repeated here and tools/icons-test.mjs fails if the
+    // two ever disagree.
+    vibrate: [350, 120, 350, 120, 800],
+    // Relative to this worker's scope (the repository root), so the install
+    // icon resolves under a project Pages subpath as well as at a domain root.
+    icon: "assets/icons/icon-192.png",
+    badge: "assets/icons/maskable-192.png",
   };
 
   event.waitUntil(self.registration.showNotification(title, options));

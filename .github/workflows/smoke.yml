@@ -46,6 +46,11 @@ jobs:
       - name: Validate the static site (links, claims, wiring)
         run: node tools/site-links-test.mjs
 
+      - name: Validate installability, icons and the manifest
+        run: |
+          node tools/make-icons.mjs --check
+          node tools/icons-test.mjs
+
       - name: Validate two-sided hit forecast model
         run: node tools/hit-model-test.mjs
 

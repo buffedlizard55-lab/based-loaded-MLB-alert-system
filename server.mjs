@@ -38,6 +38,10 @@ const MIME_TYPES = {
   '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  // The install manifest; GitHub Pages and most static hosts already send
+  // application/manifest+json for this extension, and the browser will still
+  // install with application/json, but name it so local runs match production.
+  '.webmanifest': 'application/manifest+json',
   '.webp': 'image/webp',
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/markdown; charset=utf-8',

@@ -112,6 +112,8 @@ node tools/watcher-deploy-test.mjs       # deployment recipes vs. the watcher's 
 node tools/webpush-test.mjs              # Web Push encryption/VAPID against the RFC vectors
 node tools/push-alerts-test.mjs          # the site's phone-alerts panel (stub browser + DOM)
 node tools/site-links-test.mjs           # pages, links, citations, CI wiring
+node tools/make-icons.mjs --check        # the shipped icons still match their generator
+node tools/icons-test.mjs                # installability: manifest, icons, pages, buzz parity
 node tools/deployed-site-test.mjs        # the published site itself (network)
 ```
 
@@ -217,19 +219,28 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 5. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
-6. **Live end-to-end proof still pending.** Deterministic suites cover 11,765 rule states
-   plus 99 monitor, 160 strip, 120 watcher, 112 deployment, 130 Web Push, 74 phone-alert and
-   345 site checks, and a published-site check verifies the
+6. **Live end-to-end proof still pending.** Deterministic suites cover 11,772 rule states
+   plus 99 monitor, 160 strip, 159 watcher, 112 deployment, 130 Web Push, 74 phone-alert,
+   153 installability and 347 site checks, and a published-site check verifies the
    deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
    been observed end-to-end from this deployment, and no alert has yet arrived on a real
    phone through a real push service — the next live tied bottom-9+ game is the real
    acceptance test.
-7. **Development-sandbox network limit (flagged, open).** The sandbox used for the
-   2026-09-29 session cannot reach `statsapi.mlb.com` (TLS egress is blocked: curl exits
-   with `SSL_ERROR_SYSCALL`, HTTP 000). The API projections documented here were verified
-   in the session earlier the same day and must be re-confirmed from a networked machine
-   or by the CI smoke workflow. **No live-alert claim in this repository is based on a
-   response that was not fetched from the official API.**
+7. **Development-sandbox network limit (partially closed, still flagged).** Raw socket
+   egress from this sandbox is blocked (`curl`/`node fetch` to `statsapi.mlb.com` die with
+   `SSL_ERROR_SYSCALL`, HTTP 000), so the watcher and the live smoke suite cannot run
+   here. The session's *page-fetch* path does reach the official API, though, and on
+   2026-09-29 it was used to re-verify, live, the three claims this project leans on:
+   the dated schedule (`sportId=1&date=2026-09-29`, four Wild Card games), the exact
+   `getAlertSnapshot` projection against live game 849849 (status, linescore with count
+   and outs, `plays.currentPlay.result`, `offense`/`defense` occupants — and empty bases
+   as *absent keys*, exactly as the occupancy check reads them), and the same linescore
+   unfiltered at `/api/v1/game/849849/linescore`. That session also caught the one quirk
+   worth knowing: `linescore.defense.{batter,onDeck,inHole}` are the *fielding* team's
+   next three hitters, so due-up context must come from `offense`. The CI nightly live
+   check remains the standing confirmation from a machine with normal egress. **No
+   live-alert claim in this repository is based on a response that was not fetched from
+   the official API.**
 8. **Cross-page quiet window is 90 seconds by design.** Another page's recent alert
    silences this page's chime for the same game + inning; a confirmed exit and reload
    still alerts (observer-scoped). If field use shows double beeps or missed beeps, tune
@@ -259,16 +270,20 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    requires `assets/js/bases-loaded-core.js` **verbatim** (no forked rules), polls the same
    official endpoints, de-duplicates across restarts, writes a JSONL alert log carrying the
    official snapshot URL, and pushes via a webhook or ntfy. Covered by
-   `tools/watcher-test.mjs` (120 checks, stubbed network and clock). Browser-grade **Web Push
+   `tools/watcher-test.mjs` (159 checks, stubbed network and clock). Browser-grade **Web Push
    (VAPID) shipped this session** — see the work item below. Still open, and honestly *not*
    solved by that file: **someone still has to run it** on a machine that stays on. The recipes
    and guide exist ([`deploy/`](deploy/), [docs/watcher-deployment.md](docs/watcher-deployment.md)),
    but this repository has not observed a real always-on host keeping its own watch.
-4. **Wider alert context** (due-up hitters, pitcher line) only after verifying the
-   extra projection fields against a live payload first — never widen a projection on
-   assumption. The extra-inning `linescore.offense` shape used by the slate board is the
-   same occupied-base object already verified for the alert snapshot; anything new must
-   be fetched and checked the same way.
+4. ~~Wider alert context (due-up hitters).~~ **Shipped this session**, and widened only
+   after verifying against a live payload: `linescore.offense.inHole` (the hitter after
+   the on-deck hitter) is now part of the evaluated situation, the alert event, the
+   history export and the cards on both front ends, shown as "due up: X → Y". Verified
+   live on 2026-09-29 against game 849849 — where `offense.batter/onDeck/inHole` are the
+   *batting* side's upcoming order and `defense.batter/onDeck/inHole` are the fielding
+   team's next three, so reading the defensive copy would name the wrong lineup. The
+   projection already requested `inHole`, so nothing new was added to the request; the
+   suite now pins that a defensive `inHole` can never appear as due up.
 5. ~~History export (CSV/JSON) and a shareable per-alert link.~~ **Shipped this session**:
    *Export JSON*, *Export CSV* and *Copy newest evidence line* on the monitor, each record
    carrying the exact official snapshot URL it was read from, plus an *Official snapshot*
@@ -276,15 +291,29 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    record** rather than at this site's own history, because history is per browser and a
    link into it would be empty for anyone else — see limitation 3. Still open: a
    cross-device store (the always-on watcher in item 3 is the natural home for it).
-6. **Mobile daily-driver polish:** a web app manifest and icons (iOS Web Push already
-   requires *Add to Home Screen*, and today that install gets a screenshot for an icon), and
-   vibration with the notification.
-7. **Watcher operations, still thin:** a `--doctor`/`--check` mode that reports a half-configured
-   channel, an unreadable key file, an empty store and an unreachable upstream in one command
-   (today the startup banner covers the first three and the per-cycle line covers the fourth);
-   retry/backoff for push `429`/`5xx` instead of "the next alert is the retry"; and CLI listing /
-   pruning of stored subscriptions (the store is JSON on purpose, but reaching for `jq` is not a
-   feature).
+6. ~~Mobile daily-driver polish.~~ **Shipped this session**: `manifest.webmanifest` plus
+   generated icons (`assets/icons/`, produced deterministically by
+   `tools/make-icons.mjs` from the site's own CSS tokens) make the site installable —
+   *Add to Home Screen* is what iOS requires before Web Push works at all — and every
+   page links the manifest, favicon, `apple-touch-icon` and theme colour with relative
+   paths so it still installs under the project Pages subpath. Notifications now vibrate
+   with a distinct two-short-one-long pattern (monitor, strip and the service worker's
+   push handler all use the same numbers; `tools/icons-test.mjs` fails if they diverge).
+   Still open for the phone: a richer lock-screen layout per platform, which needs a
+   real device to judge rather than guess.
+7. ~~Watcher operations, still thin.~~ **Shipped this session**:
+   `node tools/watcher.mjs --doctor` (alias `--check`) answers "will this watcher actually
+   reach me?" in one command before a game starts — upstream reachability proven by
+   reading today's Eastern slate, log/state writability proven by a probe file it then
+   removes, and every channel reported as configured, half-configured (a hard failure,
+   because it looks like one that works) or deliberately off. `--list-subscriptions`
+   shows each stored device masked with a per-row verdict and reason;
+   `--prune-subscriptions` removes rows that can never deliver (gone endpoints are still
+   pruned automatically at delivery time, because only the push service knows that).
+   A push that fails transiently (429, 5xx, or no answer at all) is now retried up to
+   three times with a capped backoff that honours `Retry-After`; failures that are a
+   decision about *this* request (400/401/403/404/410/413) are reported once and not
+   retried. All of it is covered by `tools/watcher-test.mjs` with an injected clock.
 8. ~~Browser-grade Web Push.~~ **Shipped this session** — see the session log below.
 
 ## Session log — 2026-09-29 (three verification passes)
@@ -487,10 +516,50 @@ line, so what was checked, what was corrected and what is still open is written 
   inside a form, and that neither the rules engine nor either monitor controller reads it; the
   entry output is `readonly`. The rule that actually matters — nothing has to be typed for a
   situation to be caught — is still enforced.
-- Deterministic suites after the change: rules 11,765 · monitor 99 · strip 160 · watcher 120 ·
-  deploy 112 · Web Push 130 · phone alerts 74 · site 345 · published-site 33 (local dry run
-  against `node server.mjs`). CI runs the two new suites (vectors and panel) in the
-  deterministic job.
+- Deterministic suite totals *as of that session* (rule suite 11,765 · monitor 99 · strip 160 ·
+  watcher 120 · deploy 112 · Web Push 130 · phone alerts 74 · site 345 · published-site 33 in a
+  local dry run against `node server.mjs`); current totals are in limitation 6 above. CI runs
+  the two new suites (vectors and panel) in the deterministic job.
+
+**Session 3 — everyday-use: installable, operable, and re-verified against the live API (2026-09-29)**
+
+- **Pass 1 — implement.** Shipped the three open work items that stand between this and a
+  daily driver: (a) *installability* — `manifest.webmanifest`, generated icons and a shared
+  notification vibration pattern across monitor, strip and service worker; (b) *watcher
+  operations* — `--doctor`/`--check`, `--list-subscriptions`, `--prune-subscriptions`, and
+  capped retry/backoff for transient push failures; (c) *wider alert context* — the
+  in-the-hole hitter as "due up" on cards, events and exports. Every addition got tests in
+  the same pass: `tools/icons-test.mjs` (153 checks, new), +37 watcher checks, +7 rule checks.
+- **Pass 2 — bugs and edge cases found by re-reading the work.** The icon rasteriser's
+  paint order swallowed the infield outline (the band test ran before the interior test, so
+  the whole diamond came out one colour) — fixed and now pinned by pixel assertions; the
+  icon test sampled pixels with a 512-only scale and read past the end of the 192px image —
+  fixed to sample in unit space; `--doctor` first reported "no push channel" as a hard
+  failure, which is a false negative for a legitimate stdout-only setup — now a notice that
+  still prints; `tools/site-links-test.mjs` compared the documented suite size to its
+  *mid-run* count, so its drift note fired on every run and meant nothing — moved to the end.
+- **Pass 3 — re-check against the brief and against the live official feed.** Raw egress is
+  still blocked here, but the session's page-fetch path reaches the API, so the three
+  load-bearing claims were re-verified live rather than trusted: the dated schedule for
+  2026-09-29, the exact `getAlertSnapshot` projection against live game 849849, and the same
+  linescore unfiltered. That is where the `defense.*` upcoming-order quirk was caught and
+  turned into a pinned test (a defensive `inHole` must never render as due up).
+- **Observations and irregularities, stated only where reproducible.** (1) Two fetches of
+  live game 849849 a few minutes apart showed the score advance 0–0 → 1–0 (White Sox) with a
+  3-2 count in progress — a live confirmation that the official feed this project polls does
+  update as the game moves, which is the assumption the 2-second cadence rests on. (2) Irregularity,
+  confirmed twice and now pinned by a test: `linescore.defense.batter/onDeck/inHole` are the
+  *fielding* team's next three hitters (with the White Sox batting, `defense.batter` was the
+  Astros' shortstop), so due-up context must be read from `offense.*`; reading the defensive
+  copy would name the wrong lineup. (3) Not an irregularity but checked and cleared: the
+  slate's `leagueRecord` values reconcile with the results and statuses on the same response
+  (Braves 1–0 after winning 849845; 0–0 for the unplayed and in-progress games), and empty
+  bases arrive as *absent keys*, exactly as the occupancy check reads them. (4) Sandbox
+  egress remains blocked, so the live smoke suite and a real phone round trip still have to
+  be observed from a networked machine (limitations 6 and 7 above).
+- Suite totals after this session: rule suite 11,772 · monitor 99 · strip 160 · watcher 159 ·
+  deploy 112 · Web Push 130 · phone alerts 74 · installability 153 · site 347 · published-site
+  40 in a local dry run against `node server.mjs`.
 
 ## Original MLB Live PBP documentation
 

@@ -99,6 +99,14 @@ const BasesLoadedRules = (() => {
     const onDeck = ls.offense?.onDeck?.id
       ? { id: ls.offense.onDeck.id, name: ls.offense.onDeck.fullName || "On Deck" }
       : null;
+    // The hitter after the on-deck hitter. `offense.*` is the batting side's own
+    // upcoming order — verified live on 2026-09-29 (game 849849): with the White
+    // Sox batting, `offense.batter/onDeck/inHole` were three White Sox while
+    // `defense.batter/onDeck/inHole` were the Astros' next three. Reading the
+    // defensive copy here would name the wrong team's lineup.
+    const inHole = ls.offense?.inHole?.id
+      ? { id: ls.offense.inHole.id, name: ls.offense.inHole.fullName || "In the hole" }
+      : null;
 
     // Current play description. The live projection carries the official
     // result under liveData.plays.currentPlay (verified against the StatsAPI);
@@ -169,6 +177,7 @@ const BasesLoadedRules = (() => {
       batter,
       pitcher,
       onDeck,
+      inHole,
       currentPlay,
       lastEvent,
       runnersOn,
@@ -250,6 +259,18 @@ const BasesLoadedRules = (() => {
     });
   }
 
+  /**
+   * The buzz a phone gives when the situation appears, in milliseconds.
+   *
+   * Two short pulses then one long: distinct from a message (single buzz) and
+   * from a call (continuous), so a phone in a pocket says "bases loaded"
+   * without being looked at. Shared by the monitor, the strip and the service
+   * worker's push handler; `sw.js` repeats the same numbers because a service
+   * worker cannot import this file, and tools/icons-test.mjs fails if the two
+   * ever disagree.
+   */
+  const vibratePattern = Object.freeze([350, 120, 350, 120, 800]);
+
   /** "2nd & 3rd" / "Loaded" / "Bases empty" — labels only, never invented occupancy. */
   function occupancyLabel(bases, loadedWord = "Loaded") {
     const order = ["1st", "2nd", "3rd"];
@@ -304,6 +325,7 @@ const BasesLoadedRules = (() => {
             batter: result.batter,
             pitcher: result.pitcher,
             onDeck: result.onDeck,
+            inHole: result.inHole,
             tension: result.tension,
             tensionLabel: result.tensionLabel,
             lastEvent: result.lastEvent,
@@ -374,6 +396,7 @@ const BasesLoadedRules = (() => {
     "batter",
     "pitcher",
     "onDeck",
+    "inHole",
     "officialSource",
     "gameUrl",
   ];
@@ -418,6 +441,7 @@ const BasesLoadedRules = (() => {
       batter: personName(entry?.batter),
       pitcher: personName(entry?.pitcher),
       onDeck: personName(entry?.onDeck),
+      inHole: personName(entry?.inHole),
       officialSource: pk === null ? "" : officialFeed(pk),
       gameUrl: pk === null ? "" : link(pk),
     };
@@ -514,6 +538,7 @@ const BasesLoadedRules = (() => {
     pollCadence,
     recentSharedAlert,
     occupancyLabel,
+    vibratePattern,
     historyColumns,
     historyRecord,
     historyCSV,

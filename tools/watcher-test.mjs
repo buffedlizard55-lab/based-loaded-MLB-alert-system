@@ -29,6 +29,13 @@ const {
   pushPayload,
   pushTopic,
   PUSH_TTL_SECONDS,
+  PUSH_MAX_ATTEMPTS,
+  isRetryablePush,
+  pushRetryWaitSeconds,
+  sendPushWithRetry,
+  doctor,
+  listStoredSubscriptions,
+  pruneInvalidSubscriptions,
   runCycle,
 } = await import("./watcher.mjs");
 const { b64url, generateVapidKeys, readSubscriptions, writeSubscriptions } = await import("./webpush.mjs");
@@ -692,6 +699,215 @@ check(
   }),
   false,
   "An unwritable state file is reported instead of throwing",
+);
+
+/* ------------------------------------------- push retry / backoff (ops) --- */
+
+check(isRetryablePush({ ok: false, status: 503 }), true, "A 5xx push failure is retried");
+check(isRetryablePush({ ok: false, status: 429, retryAfter: "5" }), true, "A 429 push failure is retried");
+check(isRetryablePush({ ok: false, status: 0, error: "fetch failed" }), true, "A push that never got an answer is retried");
+check(isRetryablePush({ ok: false, status: 400 }), false, "A 400 is a decision about this request — not retried");
+check(isRetryablePush({ ok: false, status: 410, gone: true }), false, "A gone subscription is not retried");
+check(isRetryablePush({ ok: true, status: 201 }), false, "A delivered push is not retried");
+
+check(pushRetryWaitSeconds({ retryAfter: "7" }, 1), 7, "A Retry-After the service sent wins");
+check(pushRetryWaitSeconds({}, 1), 2, "No Retry-After falls back to exponential backoff (2s)");
+check(pushRetryWaitSeconds({}, 2), 4, "Backoff doubles on the second retry");
+check(pushRetryWaitSeconds({ retryAfter: "9999" }, 1), 20, "An absurd Retry-After is capped");
+check(pushRetryWaitSeconds({ retryAfter: "0" }, 1), 2, "A zero Retry-After is treated as absent");
+
+const retryReceiver = createECDH("prime256v1");
+retryReceiver.generateKeys();
+const retryAuth = randomBytes(16);
+const retrySubscription = {
+  endpoint: "https://push.example.test/retry",
+  keys: { p256dh: b64url(retryReceiver.getPublicKey()), auth: b64url(retryAuth) },
+  label: "retry-phone",
+};
+const retryVapid = generateVapidKeys();
+
+const waits = [];
+const sleepStub = async (ms) => {
+  waits.push(ms / 1000);
+};
+const statusSequence = async (statuses, retryAfterHeader = null) => {
+  let index = 0;
+  const calls = [];
+  const result = await sendPushWithRetry(retrySubscription, "{}", {
+    vapid: retryVapid,
+    ttl: 60,
+    sleep: sleepStub,
+    fetchImpl: async (url) => {
+      calls.push(url);
+      const status = statuses[Math.min(index, statuses.length - 1)];
+      index += 1;
+      return {
+        status,
+        ok: status >= 200 && status < 300,
+        headers: { get: (name) => (name === "retry-after" ? retryAfterHeader : null) },
+      };
+    },
+  });
+  return { ...result, calls };
+};
+
+const flaky = await statusSequence([503, 503, 201]);
+check(flaky.attempts.length, 3, "A flaky service gets a third attempt");
+check(flaky.outcome.ok, true, "…and the eventual 201 counts as delivered");
+check(waits.slice(0, 2), [2, 4], "The two retries backed off 2s then 4s");
+check(flaky.calls.length, 3, "Exactly three requests reached the push service");
+
+waits.length = 0;
+const stuck = await statusSequence([503]);
+check(stuck.attempts.length, PUSH_MAX_ATTEMPTS, "A service that stays down stops after the attempt cap");
+check(stuck.outcome.ok, false, "…and the alert is reported failed, not silently queued");
+check(waits.length, PUSH_MAX_ATTEMPTS - 1, "One wait between each pair of attempts");
+
+waits.length = 0;
+const refused = await statusSequence([400]);
+check(refused.attempts.length, 1, "A 400 is offered exactly once");
+check(waits, [], "…with no backoff wait at all");
+
+waits.length = 0;
+const throttled = await statusSequence([429], "3");
+check(throttled.outcome.ok, false, "A service that only says 429 never delivers");
+check(waits[0], 3, "A 429 carrying Retry-After: 3 waits 3s before retrying");
+
+/* --------------------------------------------- doctor + subscription CLI -- */
+
+const opsDirectory = mkdtempSync(join(tmpdir(), "loaded-late-ops-"));
+const opsKeys = join(opsDirectory, "vapid-keys.json");
+writeFileSync(opsKeys, `${JSON.stringify(generateVapidKeys())}\n`);
+const slate = (games) => ({ dates: [{ games }] });
+
+const healthy = await doctor(
+  {
+    logDir: opsDirectory,
+    logFile: join(opsDirectory, "alerts.jsonl"),
+    stateFile: join(opsDirectory, "state.json"),
+    webhookUrl: "https://hooks.example.test/loaded",
+    ntfyTopic: "",
+    ntfyServer: "https://ntfy.sh",
+    pushSubscriptions: "",
+    vapidKeysFile: "",
+  },
+  { fetchImpl: async () => slate([{}, {}]) },
+);
+check(healthy.ok, true, "doctor passes a watcher with a reachable upstream and one channel");
+check(
+  healthy.lines.some((line) => line.label === "upstream" && line.ok === true && line.detail.includes("2 game(s)")),
+  true,
+  "doctor proves the upstream by reading today's slate",
+);
+check(
+  healthy.lines.some((line) => line.label === "web push" && line.ok === null),
+  true,
+  "an unconfigured channel reads as 'off', not as a failure",
+);
+
+// stdout + log is a legitimate setup, so "no push channel" is a notice, not a
+// failure — but it must still be printed, because it is the difference between
+// "alerts reach this machine" and "alerts reach me".
+const terminalOnly = await doctor(
+  {
+    logDir: opsDirectory,
+    logFile: join(opsDirectory, "alerts.jsonl"),
+    stateFile: join(opsDirectory, "state.json"),
+    webhookUrl: "",
+    ntfyTopic: "",
+    ntfyServer: "https://ntfy.sh",
+    pushSubscriptions: "",
+    vapidKeysFile: "",
+  },
+  { fetchImpl: async () => slate([{}]) },
+);
+check(terminalOnly.ok, true, "doctor passes a stdout-only watcher (a real, if local, setup)");
+check(
+  terminalOnly.lines.some((line) => line.label === "channels" && line.ok === null && /not a phone/.test(line.detail)),
+  true,
+  "…while still saying out loud that nothing reaches a phone",
+);
+
+const halfPush = await doctor(
+  {
+    logDir: opsDirectory,
+    logFile: join(opsDirectory, "alerts.jsonl"),
+    stateFile: join(opsDirectory, "state.json"),
+    webhookUrl: "",
+    ntfyTopic: "",
+    ntfyServer: "https://ntfy.sh",
+    pushSubscriptions: join(opsDirectory, "subs.json"),
+    vapidKeysFile: "",
+  },
+  { fetchImpl: async () => slate([]) },
+);
+check(halfPush.ok, false, "doctor fails a half-configured Web Push channel");
+check(
+  halfPush.lines.some((line) => line.ok === false && /WATCHER_VAPID_KEYS/.test(line.detail)),
+  true,
+  "…naming the missing half so the fix is one command away",
+);
+
+const offline = await doctor(
+  {
+    logDir: opsDirectory,
+    logFile: join(opsDirectory, "alerts.jsonl"),
+    stateFile: join(opsDirectory, "state.json"),
+    webhookUrl: "https://hooks.example.test/loaded",
+    ntfyTopic: "",
+    ntfyServer: "https://ntfy.sh",
+    pushSubscriptions: "",
+    vapidKeysFile: "",
+  },
+  { fetchImpl: async () => { throw new Error("ECONNREFUSED"); } },
+);
+check(offline.ok, false, "doctor fails when the official upstream is unreachable");
+check(
+  offline.lines.some((line) => line.label === "upstream" && line.ok === false),
+  true,
+  "…and says it is the upstream, not the channels",
+);
+
+// A store with one good device and one row that can never deliver.
+const goodReceiver = createECDH("prime256v1");
+goodReceiver.generateKeys();
+const goodAuth = randomBytes(16);
+const opsStore = join(opsDirectory, "ops-subscriptions.json");
+writeFileSync(
+  opsStore,
+  `${JSON.stringify({
+    subscriptions: [
+      { endpoint: "https://push.example.test/good", keys: { p256dh: b64url(goodReceiver.getPublicKey()), auth: b64url(goodAuth) }, label: "good" },
+      { endpoint: "https://push.example.test/broken", keys: { p256dh: b64url(goodReceiver.getPublicKey()), auth: "bm90LXNpeHRlZW4tYnl0ZXM" }, label: "broken" },
+    ],
+  })}\n`,
+);
+const listing = listStoredSubscriptions({ pushSubscriptions: opsStore });
+check(listing.entries.length, 2, "the listing shows every stored row, good and bad");
+check(
+  listing.entries.map((entry) => entry.valid),
+  [true, false],
+  "…flagging the row whose auth secret is the wrong length",
+);
+ok(listing.entries[1].reason.includes("16 octets"), "…and says why, in words");
+
+const pruned = pruneInvalidSubscriptions({ pushSubscriptions: opsStore });
+check(pruned.removed.length, 1, "prune removes exactly the undeliverable row");
+check(pruned.saved, true, "…and reports that the rewrite landed");
+check(
+  readSubscriptions(opsStore).map((entry) => entry.label),
+  ["good"],
+  "the store on disk now holds only the usable device",
+);
+check(
+  pruneInvalidSubscriptions({ pushSubscriptions: opsStore }).removed.length,
+  0,
+  "a second prune finds nothing left to remove",
+);
+check(
+  listStoredSubscriptions({ pushSubscriptions: "" }).configured,
+  false,
+  "with no store configured the CLI says so instead of guessing",
 );
 
 /* --------------------------------------------------------- the summary --- */

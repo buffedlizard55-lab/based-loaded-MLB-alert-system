@@ -547,11 +547,6 @@ check(
     `The sources page quotes one watcher-suite size throughout (${quoted.join(", ")})`,
   );
 }
-if (readmeCount !== null && readmeCount !== checks)
-  console.log(
-    `  note: the docs quote ${readmeCount} site checks; this run performs ${checks}.`,
-  );
-
 /* --------------- 11. the history export controls stay on both pages ------- */
 
 // The export toolbar is read-only, but it is wired by id: a rename in the
@@ -571,5 +566,12 @@ ok(
     /rules\.evidenceLine/.test(monitorSource),
   "The export uses the tested serializers, not ad-hoc string building",
 );
+
+// Compared at the *end*: the number the docs quote is this suite's final total,
+// so comparing mid-run would always disagree and the note would mean nothing.
+if (readmeCount !== null && readmeCount !== checks)
+  console.log(
+    `  note: the docs quote ${readmeCount} site checks; this run performs ${checks}.`,
+  );
 
 console.log(`✓ ${checks} static site integrity checks passed`);

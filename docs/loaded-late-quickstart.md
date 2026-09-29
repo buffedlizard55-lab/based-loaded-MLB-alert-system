@@ -25,6 +25,15 @@ The strip and the monitor share one alert log and one notification setting, so a
 
 On-page alerts always work whether or not you enable sound or notifications.
 
+## Install it on your phone (once)
+
+The site is an installable web app: it ships a manifest and generated icons, so
+*Add to Home Screen* (iOS Safari: Share → Add to Home Screen; Android Chrome: menu →
+Install app) puts a real icon on the home screen and opens it without browser chrome.
+On iOS that install is also the precondition for Web Push, so this is the step that
+makes phone alerts possible at all. Installed or not, an alert vibrates with a
+distinct two-short-one-long buzz in addition to the chime and the notification.
+
 ## See it work in ten seconds
 
 - `index.html?demo=1` — seventeen guided scenarios on the monitor (top-half exclusion, the changeover, partial bases, the alert, bases clearing and reloading, a walk-off, the automatic extra-inning runner, bottom 14, and a tying bases-loaded walk in bottom 15).
@@ -48,6 +57,14 @@ Every route to loaded bases counts, because occupancy is read from the official 
   WATCHER_NTFY_TOPIC=my-loaded-late node tools/watcher.mjs  # push to a phone via ntfy
   ```
   It logs every alert (with the official snapshot link) to `data/watcher-alerts.jsonl` and de-duplicates across restarts. You supply the machine it runs on; the repository hosts nothing.
+  Before a game, one command says whether it will actually reach you:
+  ```bash
+  node tools/watcher.mjs --doctor              # upstream + log/state + every channel, one report
+  node tools/watcher.mjs --list-subscriptions  # stored devices, masked, with a verdict each
+  node tools/watcher.mjs --prune-subscriptions # drop rows that can never deliver
+  ```
+  A push that fails transiently (429, 5xx, no answer) is retried up to three times with a
+  capped backoff; a failure that is a decision about that request is reported once.
 - Schedule discovery runs every 30 s (15 s once a game is late); a game in the 9th or later gets a fresh official snapshot every 5 s on the strip and every 2 s on the monitor.
 - Feed delays, brief situations between polls and network outages can be missed. Nothing is back-filled: history is what this browser observed.
 - Notifications need browser support and permission; sound needs one click per session.

@@ -23,6 +23,14 @@
  * Run
  *   node tools/watcher.mjs                 # watch until stopped (Ctrl-C)
  *   WATCHER_ONCE=1 node tools/watcher.mjs   # one cycle, then exit (cron)
+ *   node tools/watcher.mjs --doctor         # "will this reach me?" report, then exit
+ *   node tools/watcher.mjs --list-subscriptions   # show stored devices, masked
+ *   node tools/watcher.mjs --prune-subscriptions  # drop rows that can never deliver
+ *
+ * A push that fails transiently (429, 5xx, or no answer at all) is retried up to
+ * PUSH_MAX_ATTEMPTS times with a capped backoff that honours `Retry-After`;
+ * failures that are a decision about this request (400/401/403/404/410/413) are
+ * reported once and not retried, because retrying them only wastes the moment.
  *
  * Configuration (all optional)
  *   WATCHER_POLL_MS=15000     schedule discovery cadence
@@ -55,11 +63,19 @@
  */
 
 import { createRequire } from "node:module";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   maskEndpoint,
+  normalizeSubscription,
   readSubscriptions,
   readVapidKeys,
   removeSubscription,
@@ -131,6 +147,75 @@ export function loadConfig(env = process.env) {
 export const PUSH_TTL_SECONDS = 1_800;
 
 /**
+ * How many times one alert may be offered to one push service before the
+ * watcher gives up and lets the *next* alert be the retry. Three tries with a
+ * short backoff covers the common transient answers (a 503 from a busy service,
+ * a dropped connection) without ever letting a retry loop outlive the moment
+ * the alert describes.
+ */
+export const PUSH_MAX_ATTEMPTS = 3;
+
+/**
+ * Longest single retry wait, in seconds. A push service may answer 429 with a
+ * `Retry-After` of minutes; honouring that in full would push the alert past
+ * the point where "bases loaded, bottom 9" is still news, so the wait is capped
+ * and, if the service is still saying no after the last attempt, the delivery is
+ * reported as failed rather than silently queued.
+ */
+export const PUSH_MAX_RETRY_WAIT_SECONDS = 20;
+
+/**
+ * Which failed pushes are worth another attempt.
+ *
+ *   429        the service asked us to slow down — retrying later is the point
+ *   5xx        the service's own problem, not ours
+ *   status 0   the request never reached an answer (DNS/TLS/timeout)
+ *
+ * Everything else is a decision about *this* request (400 malformed, 401/403
+ * bad VAPID, 404/410 subscription gone, 413 too big) and retrying it would only
+ * waste the window.
+ */
+export function isRetryablePush(outcome) {
+  if (!outcome || outcome.ok || outcome.gone) return false;
+  const status = Number(outcome.status);
+  if (!Number.isFinite(status)) return false;
+  if (status === 0) return true;
+  if (status === 429) return true;
+  return status >= 500 && status <= 599;
+}
+
+/**
+ * How long to wait before the next attempt, in seconds. A `Retry-After` the
+ * service actually sent wins (it knows its own load), otherwise exponential
+ * backoff; both are capped so a stalled service cannot stall the watch.
+ */
+export function pushRetryWaitSeconds(outcome, attempt) {
+  const asked = Number(outcome?.retryAfter);
+  const seconds = Number.isFinite(asked) && asked > 0 ? asked : 2 ** attempt;
+  return Math.min(Math.max(1, Math.floor(seconds)), PUSH_MAX_RETRY_WAIT_SECONDS);
+}
+
+/**
+ * Offer one payload to one subscription, retrying only the failures that can
+ * plausibly clear. `sleep` is injected so tests run the backoff without waiting.
+ * Returns the final outcome plus the list of attempts it took.
+ */
+export async function sendPushWithRetry(subscription, payload, options = {}) {
+  const sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const attempts = [];
+  let outcome = await sendPush(subscription, payload, options);
+  attempts.push(outcome);
+  let attempt = 0;
+  while (attempts.length < PUSH_MAX_ATTEMPTS && isRetryablePush(outcome)) {
+    attempt += 1;
+    await sleep(pushRetryWaitSeconds(outcome, attempt) * 1000);
+    outcome = await sendPush(subscription, payload, options);
+    attempts.push(outcome);
+  }
+  return { outcome, attempts };
+}
+
+/**
  * The notification a subscribed device will actually display, as JSON.
  *
  * `sw.js` (the service worker the panel registers) reads these fields: the title
@@ -185,7 +270,7 @@ export function pushConfigProblem(config) {
  * throws is recorded as a failure with its reason, and the alert is still in
  * the log.
  */
-export async function deliver(alert, config, fetchImpl = fetch) {
+export async function deliver(alert, config, fetchImpl = fetch, pushOptions = {}) {
   const text = rules.evidenceLine(alert, gamePageUrl);
   const results = [{ channel: "log", ok: true, detail: config.logFile || "(log)" }];
 
@@ -226,7 +311,7 @@ export async function deliver(alert, config, fetchImpl = fetch) {
   if (pushProblem) {
     results.push({ channel: "push", ok: false, detail: pushProblem });
   } else if (config.pushSubscriptions && config.vapidKeysFile) {
-    results.push(...(await deliverPush(text, alert, config, fetchImpl)));
+    results.push(...(await deliverPush(text, alert, config, fetchImpl, pushOptions)));
   }
 
   return { text, results };
@@ -241,7 +326,7 @@ export async function deliver(alert, config, fetchImpl = fetch) {
  * permanently gone are removed from the store — and that rewrite is reported,
  * because silently growing a store full of dead endpoints is how a channel rots.
  */
-async function deliverPush(text, alert, config, fetchImpl) {
+async function deliverPush(text, alert, config, fetchImpl, pushOptions = {}) {
   let vapid;
   try {
     vapid = readVapidKeys(config.vapidKeysFile);
@@ -272,21 +357,28 @@ async function deliverPush(text, alert, config, fetchImpl) {
   const gone = [];
   for (const subscription of subscriptions) {
     const label = subscription.label || "device";
-    const outcome = await sendPush(subscription, pushPayload(alert, text), {
-      fetchImpl,
-      vapid,
-      ttl: PUSH_TTL_SECONDS,
-      urgency: "high",
-      topic: pushTopic(alert),
-      subject: config.vapidSubject || undefined,
-    });
+    const { outcome, attempts } = await sendPushWithRetry(
+      subscription,
+      pushPayload(alert, text),
+      {
+        fetchImpl,
+        vapid,
+        ttl: PUSH_TTL_SECONDS,
+        urgency: "high",
+        topic: pushTopic(alert),
+        subject: config.vapidSubject || undefined,
+        ...pushOptions,
+      },
+    );
+    const tried = attempts.length > 1 ? ` · ${attempts.length} attempts` : "";
     results.push({
       channel: `push(${label})`,
       ok: outcome.ok,
       detail: outcome.ok
-        ? `HTTP ${outcome.status} · ${outcome.bytes} bytes · ${maskEndpoint(subscription.endpoint)}`
+        ? `HTTP ${outcome.status} · ${outcome.bytes} bytes · ${maskEndpoint(subscription.endpoint)}${tried}`
         : `${outcome.error || `HTTP ${outcome.status}`} · ${maskEndpoint(subscription.endpoint)}` +
-          (outcome.retryAfter ? ` · retry after ${outcome.retryAfter}s` : ""),
+          (outcome.retryAfter ? ` · retry after ${outcome.retryAfter}s` : "") +
+          tried,
     });
     if (outcome.gone) gone.push(subscription.endpoint);
   }
@@ -335,6 +427,160 @@ export function appendAlert(file, record, fs = { appendFileSync, mkdirSync, dirn
   } catch (_) {
     return false;
   }
+}
+
+/* ------------------------------------------------------- operations (doctor) */
+
+/**
+ * Every stored subscription with a verdict, without sending anything.
+ *
+ * `readSubscriptions` deliberately drops entries it cannot validate so one bad
+ * row cannot disable the rest — which is right at delivery time but means the
+ * operator cannot see *why* a device went quiet. This reads the raw file and
+ * says, per row, whether it is usable and, if not, why.
+ */
+export function listStoredSubscriptions(config, fs = { readFileSync }) {
+  if (!config?.pushSubscriptions) return { configured: false, entries: [] };
+  if (!existsSync(config.pushSubscriptions))
+    return { configured: true, missing: true, entries: [] };
+  let raw = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(config.pushSubscriptions, "utf8"));
+    raw = Array.isArray(parsed) ? parsed : parsed?.subscriptions || [];
+  } catch (error) {
+    return { configured: true, unreadable: String(error?.message || error), entries: [] };
+  }
+  return {
+    configured: true,
+    entries: raw.map((entry, index) => {
+      try {
+        const normal = normalizeSubscription(entry);
+        return {
+          index,
+          label: normal.label || `entry ${index}`,
+          endpoint: maskEndpoint(normal.endpoint),
+          valid: true,
+          reason: "",
+        };
+      } catch (error) {
+        return {
+          index,
+          label: `entry ${index}`,
+          endpoint: maskEndpoint(entry?.endpoint),
+          valid: false,
+          reason: String(error?.message || error),
+        };
+      }
+    }),
+  };
+}
+
+/**
+ * Remove rows that can never deliver (malformed endpoint or keys) from the
+ * store. Endpoints that are merely *gone* (404/410) are pruned automatically at
+ * delivery time, because only the push service knows that; this only clears
+ * rows that are structurally invalid and would be skipped forever.
+ */
+export function pruneInvalidSubscriptions(config, fs = { readFileSync }) {
+  const listing = listStoredSubscriptions(config, fs);
+  if (listing.missing || listing.unreadable || !listing.configured)
+    return { ...listing, removed: [], kept: 0, saved: false };
+  const valid = listing.entries.filter((entry) => entry.valid);
+  const removed = listing.entries.filter((entry) => !entry.valid);
+  if (!removed.length)
+    return { ...listing, removed: [], kept: valid.length, saved: false };
+  const kept = readSubscriptions(config.pushSubscriptions, fs);
+  const saved = writeSubscriptions(config.pushSubscriptions, kept);
+  return { ...listing, removed, kept: kept.length, saved };
+}
+
+/**
+ * One command that answers "will this watcher actually reach me?" before a game
+ * starts, instead of discovering it mid-walk-off.
+ *
+ * Checks, in the order an operator cares about them: can it reach the official
+ * API, can it write its log and state, and is every configured delivery channel
+ * actually configured (keys readable, store present and non-empty). A channel
+ * the operator did not configure is reported as *off*, not as a failure — but a
+ * channel configured half-way is a failure, because it looks like one that works.
+ */
+export async function doctor(config, { fetchImpl = fetch } = {}) {
+  const lines = [];
+  const add = (ok, label, detail) => lines.push({ ok, label, detail });
+
+  // 1. The official upstream, with today's (Eastern) slate as the proof.
+  try {
+    const slate = await fetchImpl(`${V1}/schedule?sportId=1&date=${isoDay(0)}`);
+    const games = slate?.dates?.[0]?.games;
+    if (!Array.isArray(games)) add(false, "upstream", "answered but not with a readable slate");
+    else add(true, "upstream", `statsapi.mlb.com answered · ${games.length} game(s) on ${isoDay(0)}`);
+  } catch (error) {
+    add(false, "upstream", `unreachable: ${String(error?.message || error)}`);
+  }
+
+  // 2. The log and the dedup state must be writable, or alerts vanish silently.
+  const probe = join(config.logDir, ".doctor-probe");
+  const wrote = appendAlert(probe, { probe: true });
+  let probeRemoved = false;
+  if (wrote) {
+    try {
+      unlinkSync(probe);
+      probeRemoved = true;
+    } catch (_) {
+      probeRemoved = false;
+    }
+  }
+  add(wrote, "log dir", wrote ? `writable (${config.logDir})` : `cannot write to ${config.logDir}`);
+  if (wrote) add(probeRemoved, "log dir", probeRemoved ? "probe file removed" : `left a probe at ${probe}`);
+  add(
+    writeState(config.stateFile, readState(config.stateFile)),
+    "state file",
+    `dedup state readable and writable (${config.stateFile})`,
+  );
+
+  // 3. Channels. stdout + the log is a legitimate setup for someone watching a
+  //    terminal or journalctl, so "no push channel" is a notice, not a failure —
+  //    but it is printed, because it is the difference between "alerts reach
+  //    this machine" and "alerts reach me". A channel configured half-way, on
+  //    the other hand, looks like one that works and never fires: that fails.
+  const anyChannel = Boolean(config.webhookUrl || config.ntfyTopic || config.pushSubscriptions);
+  add(
+    anyChannel ? true : null,
+    "channels",
+    anyChannel
+      ? "at least one push channel is configured"
+      : "only stdout + the log — alerts reach this machine, not a phone",
+  );
+  add(config.webhookUrl ? true : null, "webhook", config.webhookUrl ? maskEndpoint(config.webhookUrl) : "off");
+  add(config.ntfyTopic ? true : null, "ntfy", config.ntfyTopic ? `${config.ntfyServer}/${config.ntfyTopic}` : "off");
+
+  const pushProblem = pushConfigProblem(config);
+  if (pushProblem) {
+    add(false, "web push", pushProblem);
+  } else if (!config.pushSubscriptions && !config.vapidKeysFile) {
+    add(null, "web push", "off");
+  } else {
+    let keysOk = true;
+    try {
+      readVapidKeys(config.vapidKeysFile);
+    } catch (error) {
+      keysOk = false;
+      add(false, "web push", `VAPID keys unreadable: ${String(error?.message || error)}`);
+    }
+    if (keysOk) add(true, "web push", `VAPID keys readable (${config.vapidKeysFile})`);
+    const store = listStoredSubscriptions(config);
+    if (store.missing) add(false, "web push", `no subscription store at ${config.pushSubscriptions}`);
+    else if (store.unreadable) add(false, "web push", `subscription store unreadable: ${store.unreadable}`);
+    else if (!store.entries.length) add(false, "web push", "subscription store is empty — subscribe a device on the site");
+    else {
+      const bad = store.entries.filter((entry) => !entry.valid);
+      add(!bad.length, "web push", `${store.entries.length - bad.length}/${store.entries.length} stored subscription(s) usable${bad.length ? ` · ${bad.length} invalid` : ""}`);
+    }
+  }
+
+  // A `null` verdict means "off by choice": it prints, but never fails the run.
+  const ok = lines.every((line) => line.ok !== false);
+  return { ok, lines };
 }
 
 /* ----------------------------------------------------------------- cycle - */
@@ -488,8 +734,75 @@ function report(summary, config) {
     );
 }
 
+/**
+ * The operations sub-commands. Each prints a report and exits without watching,
+ * so they are safe to run next to a live watcher and from cron/CI. Returns a
+ * process exit code.
+ */
+async function runOperations(config, flags) {
+  if (flags.has("--list-subscriptions")) {
+    const store = listStoredSubscriptions(config);
+    if (!store.configured) {
+      console.log("no subscription store configured (set WATCHER_PUSH_SUBSCRIPTIONS)");
+      return 0;
+    }
+    if (store.missing) {
+      console.log(`no subscription store at ${config.pushSubscriptions} yet`);
+      return 0;
+    }
+    if (store.unreadable) {
+      console.error(`subscription store unreadable: ${store.unreadable}`);
+      return 1;
+    }
+    if (!store.entries.length) {
+      console.log(`subscription store ${config.pushSubscriptions} is empty`);
+      return 0;
+    }
+    for (const entry of store.entries)
+      console.log(
+        `${entry.valid ? "ok  " : "BAD "} ${entry.label} · ${entry.endpoint}${entry.valid ? "" : ` · ${entry.reason}`}`,
+      );
+    return store.entries.some((entry) => !entry.valid) ? 1 : 0;
+  }
+
+  if (flags.has("--prune-subscriptions")) {
+    const result = pruneInvalidSubscriptions(config);
+    if (!result.configured) {
+      console.log("no subscription store configured (set WATCHER_PUSH_SUBSCRIPTIONS)");
+      return 0;
+    }
+    if (!result.removed.length) {
+      console.log(`nothing to prune · ${result.kept ?? 0} stored subscription(s) all usable`);
+      return 0;
+    }
+    console.log(
+      result.saved
+        ? `removed ${result.removed.length} invalid subscription(s) · ${result.kept} left`
+        : `found ${result.removed.length} invalid subscription(s) but could not rewrite ${config.pushSubscriptions}`,
+    );
+    for (const entry of result.removed) console.log(`  - ${entry.label} · ${entry.endpoint} · ${entry.reason}`);
+    return result.saved ? 0 : 1;
+  }
+
+  if (flags.has("--doctor") || flags.has("--check")) {
+    const report = await doctor(config);
+    for (const line of report.lines)
+      console.log(`${line.ok === false ? "FAIL" : line.ok === null ? "off " : "ok  "} ${line.label}: ${line.detail}`);
+    console.log(report.ok ? "doctor: ready" : "doctor: NOT ready — fix the FAIL lines above");
+    return report.ok ? 0 : 1;
+  }
+
+  return null; // no operations flag: run the watch loop
+}
+
 async function main() {
   const config = loadConfig();
+  const flags = new Set(process.argv.slice(2));
+  const code = await runOperations(config, flags);
+  if (code !== null) {
+    process.exitCode = code;
+    return;
+  }
   const state = readState(config.stateFile);
   const pushReady = Boolean(config.pushSubscriptions && config.vapidKeysFile && !pushConfigProblem(config));
   const stored = pushReady && existsSync(config.pushSubscriptions) ? readSubscriptions(config.pushSubscriptions) : [];
