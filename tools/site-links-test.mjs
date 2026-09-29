@@ -36,6 +36,7 @@ const exists = (file) => existsSync(path.join(root, file));
 const pages = [
   "index.html",
   "bases-loaded.html",
+  "alerts.html",
   "verification.html",
   "scoreboard.html",
   "reviews.html",
@@ -83,7 +84,7 @@ for (const page of pages) {
 check(missing, [], "Every internal href/src on every page resolves");
 
 // CSS referenced by pages may itself reference local assets.
-for (const sheet of ["assets/css/bases-loaded.css", "assets/css/bases-loaded-strip.css", "assets/css/style.css"]) {
+for (const sheet of ["assets/css/bases-loaded.css", "assets/css/bases-loaded-strip.css", "assets/css/bases-loaded-feed.css", "assets/css/style.css"]) {
   ok(exists(sheet), `${sheet} exists`);
 }
 
@@ -177,7 +178,7 @@ for (const file of new Set(documented))
 // is the single exception, and it is fenced in by its own checks below: its device
 // name is a note on a subscription, it cannot reach the rules engine, and its
 // only other field is a read-only output.
-for (const page of ["index.html", "bases-loaded.html", "verification.html"]) {
+for (const page of ["index.html", "bases-loaded.html", "alerts.html", "verification.html"]) {
   const html = read(page);
   ok(!/<form|contenteditable/i.test(html), `${page} has no manual data entry form`);
   const editable = [...html.matchAll(/<input[^>]*>|<textarea[^>]*>/gi)]

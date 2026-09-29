@@ -7,7 +7,8 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 
 > **Live MLB game + tied score + bottom of inning 9 or later + runners on all three bases + fewer than three outs.**
 
-- **Home (`index.html`) / `bases-loaded.html`:** the situation monitor. No replay, challenge, scoring-change or hit-probability alerts run on this page.
+- **Home (`index.html`) / `bases-loaded.html`:** the situation monitor — live slate, alert cards, on-watch list and alert history. No replay, challenge, scoring-change or hit-probability alerts run on this page.
+- **`alerts.html` — the chat-style live feed:** the same rules engine narrating every step along the way in a chat/ABS-challenge-style timeline — watch begins, runners reaching, bases loaded, tension rising, walk-off, bases clearing, delays and extra innings — so you can sit back and watch the situation build in real time without switching to the monitor. The visual language mirrors [POSTSEASONMLBALERTS / reviews.html](https://buffedlizard55-lab.github.io/POSTSEASONMLBALERTS/reviews.html), but the events are Loaded Late's: tied + bottom 9+ + bases loaded.
 - **On watch:** begins at the tied changeover into bottom 9+ (including the third out at the top), or whenever a game becomes tied during a qualifying bottom half. There is no maximum inning.
 - **Route-independent:** reads official first/second/third base occupants, not event descriptions. Walks, hits, errors, interference, automatic extra-inning runners and official corrections all use the same rule.
 - **Alerts:** highlighted live cards, optional sound and opt-in desktop notifications. A continuous loaded situation alerts once; a confirmed exit and reload can alert again, even in the same inning.
@@ -84,8 +85,10 @@ No build or dependencies are required:
 
 ```bash
 node server.mjs
-# http://localhost:8000/ — live monitor
+# http://localhost:8000/ — live monitor (situation dashboard)
 # http://localhost:8000/?demo=1 — guided, offline synthetic scenarios
+# http://localhost:8000/alerts.html — chat-style live feed (ABS-challenge style)
+# http://localhost:8000/alerts.html?demo=1 — chat feed guided walk-off demo
 # http://localhost:8000/reviews.html — replay feed + the site-wide strip
 # http://localhost:8000/reviews.html?ll-demo=1 — strip demo, no live data
 # http://localhost:8000/scoreboard.html — original scoreboard
@@ -873,6 +876,7 @@ for archived games the request is scoped to the feed's game season.
 .
 ├── index.html                 # ALERT MONITOR (tied / bases-loaded / bottom 9+)
 ├── bases-loaded.html          # identical second entrypoint for the monitor
+├── alerts.html                # CHAT-STYLE LIVE FEED (ABS-challenge-style timeline)
 ├── verification.html          # requirements, routes to loaded bases, sources
 ├── game.html                  # Game page (?gamePk=<id>) — mounts the strip
 ├── reviews.html               # All-games Replay Feed — mounts the strip
@@ -882,11 +886,13 @@ for archived games the request is scoped to the feed's game season.
 │   ├── css/
 │   │   ├── style.css                 # inherited dark Gameday theme
 │   │   ├── bases-loaded.css          # monitor + documentation styling
+│   │   ├── bases-loaded-feed.css     # chat-style feed styling
 │   │   └── bases-loaded-strip.css    # site-wide strip styling
 │   └── js/
 │       ├── api.js                    # MLB StatsAPI client (incl. getAlertSnapshot)
-│       ├── bases-loaded-core.js      # THE RULES: tied + loaded + bottom 9+ (shared)
+│       ├── bases-loaded-core.js      # THE RULES: tied + loaded + bottom 9+ (shared) + diffStream() for chat events
 │       ├── bases-loaded.js           # monitor controller (slate, alerts, history)
+│       ├── bases-loaded-feed.js      # chat-style feed controller (alerts.html)
 │       ├── bases-loaded-strip.js     # site-wide strip controller (other pages)
 │       ├── push-alerts.js            # phone-alerts panel: subscribe this device
 │       ├── vapid-config.js           # the watcher's public key goes here

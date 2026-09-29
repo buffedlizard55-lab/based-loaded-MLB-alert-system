@@ -1,0 +1,307 @@
+/* ============================================================================
+ * bases-loaded-feed.css — Chat-style live feed for the Loaded Late alert page.
+ *
+ * Mirrors the visual language of reviews.html (POSTSEASONMLBALERTS / MLB-Live-PBP)
+ * — rounded cards, left-accent color by event kind, timestamp column, pulsing
+ * live state, new-item flash — but the cards narrate a BASES-LOADED / WATCH
+ * timeline rather than a replay / ABS challenge.
+ * ==========================================================================*/
+
+:root {
+  --bl-alert: #e03131;       /* bases loaded / walk-off */
+  --bl-alert-2: #c92a2a;
+  --bl-watch: #fb923c;      /* on watch, runners advancing */
+  --bl-tension: #fbbf24;    /* tension updates */
+  --bl-calm: #38bdf8;       /* pause/resume/info */
+  --bl-ok: #34d399;         /* bases cleared / normal resolution */
+  --bl-muted: #5c6b80;
+}
+
+/* -------------------------------------------------------------- page chrome */
+.page-loaded-alerts { background: #0a0f1a; }
+.page-loaded-alerts .topbar {
+  background: linear-gradient(180deg, #0e1415 0%, #0a0f1a 100%);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 20px;
+}
+.page-loaded-alerts .brand-sub {
+  color: var(--accent, #e03131);
+}
+
+/* ---------------------------------------------------------- summary stats */
+.bl-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 14px 20px 0;
+}
+.bl-stat {
+  background: linear-gradient(180deg, var(--panel) 0%, #0f1a2c 100%);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.bl-stat-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bl-stat-value {
+  font-size: 22px;
+  font-weight: 900;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.bl-stat-small {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.bl-stat-active .bl-stat-value { color: var(--live); }
+.bl-stat-loaded .bl-stat-value { color: var(--bl-alert); text-shadow: 0 0 12px rgba(224, 49, 49, 0.4); }
+.bl-stat-watch .bl-stat-value { color: var(--bl-watch); }
+.bl-stat-tension .bl-stat-value { color: var(--bl-tension); }
+.bl-stat-walkoffs .bl-stat-value { color: var(--bl-ok); }
+
+/* -------------------------------------------------------------- feed area */
+.bl-main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 14px 20px 60px;
+}
+.bl-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ----------------------------------------------------------- feed row card */
+.bl-row {
+  display: flex;
+  gap: 14px;
+  background: linear-gradient(180deg, var(--panel) 0%, #0f1a2c 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 12px);
+  padding: 12px 16px;
+  box-shadow: var(--shadow, 0 2px 6px rgba(0,0,0,0.25));
+  transition: transform 0.1s, border-color 0.1s;
+}
+.bl-row-new { animation: bl-flash 1.4s ease-out; }
+@keyframes bl-flash {
+  0% { background: rgba(224, 49, 49, 0.35); transform: translateY(-6px); }
+  100% { background: linear-gradient(180deg, var(--panel) 0%, #0f1a2c 100%); transform: translateY(0); }
+}
+
+/* accent left-border per event kind */
+.bl-row-kind-bases_loaded  { border-left: 4px solid var(--bl-alert); box-shadow: 0 4px 18px rgba(224,49,49,0.22); }
+.bl-row-kind-walkoff_rbi   { border-left: 4px solid var(--bl-ok); box-shadow: 0 4px 18px rgba(52,211,153,0.22); }
+.bl-row-kind-tension_update{ border-left: 4px solid var(--bl-tension); }
+.bl-row-kind-runner_advanced,
+.bl-row-kind-half_change   { border-left: 4px solid var(--bl-watch); }
+.bl-row-kind-watch_begins  { border-left: 4px solid #74c0fc; }
+.bl-row-kind-watch_ends,
+.bl-row-kind-bases_cleared { border-left: 4px solid #8896ab; }
+.bl-row-kind-paused        { border-left: 4px solid #f59f00; }
+.bl-row-kind-resumed       { border-left: 4px solid #74c0fc; }
+.bl-row-kind-final         { border-left: 4px solid #a78bfa; }
+.bl-row-kind-data_unavailable { border-left: 4px dashed #e03131; }
+
+.bl-live {
+  border-color: rgba(224, 49, 49, 0.75) !important;
+}
+
+/* --------------------------------------------------------------- time col */
+.bl-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 68px;
+  padding-top: 2px;
+  color: var(--muted);
+}
+.bl-time-day { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.bl-time-hm  { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- body col */
+.bl-body { flex: 1; min-width: 0; }
+.bl-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.bl-kind-chip {
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid;
+}
+.chip-bases_loaded { background: rgba(224,49,49,0.18); color: #ff8787; border-color: rgba(224,49,49,0.5); }
+.chip-walkoff_rbi  { background: rgba(52,211,153,0.16); color: #6ee7b7; border-color: rgba(52,211,153,0.5); }
+.chip-tension_update { background: rgba(251,191,36,0.16); color: #fcd34d; border-color: rgba(251,191,36,0.5); }
+.chip-runner_advanced { background: rgba(251,146,60,0.16); color: #fdba74; border-color: rgba(251,146,60,0.5); }
+.chip-half_change  { background: rgba(251,146,60,0.12); color: #fdba74; border-color: rgba(251,146,60,0.4); }
+.chip-watch_begins { background: rgba(116,192,252,0.12); color: #74c0fc; border-color: rgba(116,192,252,0.4); }
+.chip-watch_ends,
+.chip-bases_cleared{ background: rgba(136,150,171,0.15); color: #c5d4e8; border-color: rgba(136,150,171,0.35); }
+.chip-paused       { background: rgba(245,159,0,0.15); color: #ffd43b; border-color: rgba(245,159,0,0.45); }
+.chip-resumed      { background: rgba(116,192,252,0.12); color: #74c0fc; border-color: rgba(116,192,252,0.4); }
+.chip-final        { background: rgba(167,139,250,0.15); color: #c4b5fd; border-color: rgba(167,139,250,0.4); }
+.chip-data_unavailable { background: rgba(224,49,49,0.12); color: #ffa8a8; border-color: rgba(224,49,49,0.4); }
+
+.bl-game {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-weight: 800;
+  font-size: 13px;
+  background: var(--panel-2, #141d2c);
+  border: 1px solid var(--line);
+  padding: 2px 9px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.bl-game:hover { border-color: var(--accent, #e03131); text-decoration: none; }
+.bl-game-score { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.bl-inn {
+  background: var(--panel-2, #141d2c);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.bl-tension-pill {
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+  border: 1px solid;
+}
+.tension-pill-low  { background: rgba(116,192,252,0.12); color: #74c0fc; border-color: rgba(116,192,252,0.4); }
+.tension-pill-med  { background: rgba(251,191,36,0.15); color: #fcd34d; border-color: rgba(251,191,36,0.45); }
+.tension-pill-high { background: rgba(251,146,60,0.18); color: #fdba74; border-color: rgba(251,146,60,0.5); }
+.tension-pill-max  { background: rgba(224,49,49,0.2); color: #ff8787; border-color: rgba(224,49,49,0.6); animation: pulse-live 1.2s infinite; }
+
+.bl-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.3;
+}
+.bl-title-walkoff { color: #6ee7b7; }
+.bl-title-alert { color: #ffa8a8; }
+.bl-desc {
+  margin: 0;
+  font-size: 13.5px;
+  color: #c5d4e8;
+  line-height: 1.5;
+}
+
+/* context row: outs / count / runners mini-diamond */
+.bl-ctx {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.bl-ctx-pill {
+  background: rgba(116,192,252,0.10);
+  border: 1px solid rgba(116,192,252,0.35);
+  color: #74c0fc;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.bl-ctx-pill-outs { background: rgba(255,212,59,0.10); border-color: rgba(255,212,59,0.35); color: #ffe066; }
+.bl-ctx-pill-count { background: rgba(251,146,60,0.10); border-color: rgba(251,146,60,0.35); color: #fdba74; }
+.bl-ctx-pill-bases { background: rgba(224,49,49,0.12); border-color: rgba(224,49,49,0.4); color: #ffa8a8; }
+
+/* matchup: batter vs pitcher */
+.bl-matchup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.bl-player {
+  background: var(--panel-2, #141d2c);
+  border: 1px solid var(--line);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #dbe4f0;
+  font-weight: 700;
+}
+.bl-player-pitcher { color: #fdba74; }
+.bl-player-ondeck  { color: var(--muted); font-weight: 600; }
+
+/* footer */
+.bl-foot {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(34, 51, 82, 0.5);
+  font-size: 12px;
+  color: var(--muted);
+  align-items: center;
+}
+.bl-foot a { color: #74c0fc; }
+.bl-source {
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------ empty state */
+.bl-empty {
+  background: linear-gradient(180deg, var(--panel) 0%, #0f1a2c 100%);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius, 12px);
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.bl-empty strong { display: block; color: #c5d4e8; font-size: 15px; margin-bottom: 6px; }
+.bl-empty-icon { font-size: 28px; display: block; margin-bottom: 8px; }
+
+/* ------------------------------------------------------------ demo banner */
+.bl-demo {
+  background: linear-gradient(90deg, rgba(224,49,49,0.18), rgba(251,146,60,0.18));
+  border: 1px solid rgba(224,49,49,0.4);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.bl-demo strong { color: #ffa8a8; }
+.bl-demo p { margin: 4px 0 0; color: #c5d4e8; font-size: 13px; }
+
+/* -------------------------------------------------------------- mobile */
+@media (max-width: 560px) {
+  .bl-row { flex-direction: column; gap: 6px; }
+  .bl-time { flex-direction: row; align-items: center; gap: 8px; min-width: 0; }
+  .bl-main { padding: 10px 12px 60px; }
+  .bl-summary-bar { padding: 10px 12px 0; }
+}
