@@ -660,7 +660,7 @@
             the strip by 160, the always-on watcher by 120, its deployment recipes
             by 120, the Web Push implementation by 130 (the RFC 8291 and RFC 8292
             test vectors, intermediate values included), the phone-alerts panel by
-            74 and the static site by 343 checks (counts as of 2026-09-29), and the
+            74 and the static site by 345 checks (counts as of 2026-09-29), and the
             published copy of this site is verified by
             <code>tools/deployed-site-test.mjs</code> on every merge and
             nightly — but the honest next acceptance test is a real tied game
@@ -711,11 +711,12 @@
               than assumed.
             </li>
             <li>
-              Always-on watcher: <code>node tools/watcher-test.mjs</code> — 85
+              Always-on watcher: <code>node tools/watcher-test.mjs</code> — 120
               checks with a stubbed network and clock: what must and must not
               alert, de-duplication and re-arming, a delayed game, a failed
               schedule or snapshot, overnight carryovers, bounded concurrency,
-              the log record, and every push channel including its failures.
+              the log record, and every push channel including its failures —
+              Web Push included, down to decrypting the bytes it posts.
             </li>
             <li>
               Monitor controller: <code>node tools/bases-loaded-monitor-test.mjs</code>
@@ -732,7 +733,7 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              343 checks: every internal link target on every page exists, no
+              345 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still
