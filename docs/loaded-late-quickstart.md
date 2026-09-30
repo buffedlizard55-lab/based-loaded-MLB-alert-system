@@ -10,11 +10,17 @@ Nothing else triggers an alert.
 
 | Page | What it does |
 | --- | --- |
-| `index.html` (or `bases-loaded.html`) | The full monitor: the **live slate** (every game, why it is or is not tracked, and how old each number is), the watch window, live alerts, saved history. |
+| `index.html` (or `bases-loaded.html`) | The **situation monitor**: the live slate (every game, why it is or is not tracked, and how old each number is), the watch window, live alerts, the held-watch rows, saved history and the export controls. |
+| `alerts.html` | The **chat feed**: the same situation narrated card by card, with a live-now strip above the list (🚨 BASES LOADED / 👀 ON WATCH / ⏳ WATCH HELD / ⏸ PAUSED · WATCH HELD) and category tabs (All · Bases Loaded · On Watch · Walk-offs · Warnings). |
 | `reviews.html` (replay feed) | The **Loaded Late strip** at the top of the page watches the same situation while you use the feed. |
 | `scoreboard.html` | Same strip, above the scoreboard. |
 | `game.html` | Same strip, above the game view. |
 | `verification.html` | Requirements, every route to loaded bases with its rule number, the official sources, the polling budget and the honest limits. |
+
+**Held ≠ over.** A tied game in the 9th or later whose home team is not batting
+(top half, or between halves) — and a tied game whose play is stopped — is shown
+as a *held* watch and counted in the held tile, not silently dropped. The watch
+re-opens the moment the home half starts.
 
 The strip and the monitor share one alert log and one notification setting, so a continuous situation never alerts twice just because you changed pages.
 

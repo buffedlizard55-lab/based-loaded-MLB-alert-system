@@ -547,6 +547,14 @@ const BasesLoadedRules = (() => {
    *                         so we start watching for a walk-off opportunity.
    *   watch_ends          — a previously-watched game leaves the watch window
    *                         (no longer tied / final / out of a qualifying half).
+   *   watch_held          — the game is STILL tied and still in the 9th or
+   *                         later, but the home team is not batting right now
+   *                         (top half, or the changeover after its half). The
+   *                         watch is not over: the next bottom half re-opens
+   *                         it. This is the same state the monitor's slate
+   *                         labels "TIED · TOP HALF · HOME STILL TO BAT" /
+   *                         "TIED · HOME HALF OVER · WATCH CONTINUES", so the
+   *                         two front ends can never contradict each other.
    *   runner_advanced     — a runner reached or advanced while on watch.
    *   bases_loaded        — the exact alert: tied, bottom 9+, all three bases
    *                         occupied, <3 outs. Fires once per continuous
@@ -572,6 +580,7 @@ const BasesLoadedRules = (() => {
   const STREAM_EVENT_KINDS = Object.freeze([
     "watch_begins",
     "watch_ends",
+    "watch_held",
     "runner_advanced",
     "bases_loaded",
     "tension_update",
@@ -583,6 +592,47 @@ const BasesLoadedRules = (() => {
     "final",
     "data_unavailable",
   ]);
+
+  /**
+   * Chat-feed tabs — the same shape as the replay feed's category tabs
+   * (`reviews.html`): one pill per category with a live count, "all" first.
+   * `kinds: null` means "every kind". The list partitions STREAM_EVENT_KINDS
+   * exactly once, which `tools/bases-loaded-test.mjs` asserts, so a new event
+   * kind can never silently fall out of every tab.
+   */
+  const feedTabs = Object.freeze([
+    Object.freeze({ key: "all", label: "All", kinds: null }),
+    Object.freeze({
+      key: "loaded",
+      label: "⚾ Bases Loaded",
+      kinds: Object.freeze(["bases_loaded", "tension_update"]),
+    }),
+    Object.freeze({
+      key: "watch",
+      label: "👀 On Watch",
+      kinds: Object.freeze([
+        "watch_begins",
+        "watch_held",
+        "runner_advanced",
+        "half_change",
+      ]),
+    }),
+    Object.freeze({
+      key: "walkoff",
+      label: "🎉 Walk-offs",
+      kinds: Object.freeze(["walkoff_rbi", "bases_cleared", "final", "watch_ends"]),
+    }),
+    Object.freeze({
+      key: "warnings",
+      label: "⚠️ Warnings",
+      kinds: Object.freeze(["data_unavailable", "paused", "resumed"]),
+    }),
+  ]);
+
+  /** Does an event of `kind` belong on the tab `tab`? */
+  function matchesTab(tab, kind) {
+    return !tab || tab.kinds === null || tab.kinds.includes(kind);
+  }
 
   function mkEvent(kind, game, result, now, extra = {}) {
     return {
@@ -638,6 +688,26 @@ const BasesLoadedRules = (() => {
     const wasWatching = !!(prev?.watching || prev?.loaded);
     const wasLoaded = !!prev?.loaded;
     const wasPaused = !!prev?.paused;
+    const wasHeld = !!prev?.held;
+    // "Held": a live, tied game in the 9th or later whose home team is not
+    // batting right now (top half, or the changeover after its half). The
+    // monitor's slate labels these two states "TIED · TOP HALF · HOME STILL TO
+    // BAT" and "TIED · HOME HALF OVER · WATCH CONTINUES" — the situation is
+    // still being tracked, so the chat feed must not call it over.
+    const lateInning = Number.isInteger(result.inning) && result.inning >= 9;
+    const tiedLate = result.tied === true && lateInning;
+    const held = known && !paused && isLive(game.status) && tiedLate && !watching;
+    const homeHalfOver = String(game.linescore?.inningState || "").toLowerCase() === "bottom" && result.outs === 3;
+    /** One sentence for a held watch, matching the monitor's own wording. */
+    const holdDetail = () => {
+      const half = String(game.linescore?.inningState || "").toLowerCase();
+      if (half === "top")
+        return `Still tied in the top of the ${result.inning}th — the home team still has to bat. Watch held.`;
+      if (half === "end" || homeHalfOver)
+        return `Still tied after the home half of the ${result.inning}th — going on. Watch held.`;
+      return `Still tied in the ${result.inning}th — the home team still has to bat. Watch held.`;
+    };
+    const brokeTheTie = result.tied === false && lateInning;
 
     // 1. Data unavailability / pause / resume are surfaced as transitions.
     if (errorMsg && (!prev || !prev.error)) {
@@ -725,13 +795,58 @@ const BasesLoadedRules = (() => {
             detail: "Three outs — the side is retired. Bases cleared.",
           }),
         );
+      } else if (tiedLate) {
+        // Still tied, still in the 9th or later, still live: the home team is
+        // simply not batting *this half*. The watch is held, not over — the
+        // monitor's slate already says so, and the chat feed must never call
+        // it "over" while the other front end says it continues. Only a
+        // genuine end (the tie broken, or the game out of the window) falls
+        // through to watch_ends below.
+        events.push(
+          mkEvent("watch_held", game, result, now, {
+            detail: holdDetail(),
+            half: String(game.linescore?.inningState || "").toLowerCase(),
+          }),
+        );
       } else {
         events.push(
           mkEvent("watch_ends", game, result, now, {
-            detail: "No longer in a qualifying situation.",
+            detail: brokeTheTie
+              ? "The game is no longer tied — the walk-off watch is over."
+              : "No longer in a qualifying situation.",
           }),
         );
       }
+    }
+
+    // 3b. Held watch, both directions.
+    //
+    //   - First sight of a held game (tied, 9th or later, home team not
+    //     batting): narrate it once. This is literally the project brief's
+    //     "begin tracking when there is a tie game going to the bottom of the
+    //     9th or later" — on the first poll after the page opens, and on each
+    //     later hold, never repeating while the hold lasts. The persisted
+    //     stream state (`held`) is what keeps a reload from repeating it.
+    //   - A hold that ends without the home team batting again means the tie
+    //     is gone (or the game left the window): the watch really is over, and
+    //     the feed must say so instead of leaving a stale "watch held" card as
+    //     the last word.
+    if (held && !wasHeld && !wasWatching && !isFinal) {
+      events.push(
+        mkEvent("watch_held", game, result, now, {
+          detail: holdDetail(),
+          half: String(game.linescore?.inningState || "").toLowerCase(),
+          firstSight: !prev,
+        }),
+      );
+    } else if (wasHeld && !held && !watching && !isFinal && !paused) {
+      events.push(
+        mkEvent("watch_ends", game, result, now, {
+          detail: brokeTheTie
+            ? "The game is no longer tied — the walk-off watch is over."
+            : "No longer in a qualifying situation.",
+        }),
+      );
     }
 
     // 4. Half-inning changeover while still watching (e.g. top 10 / bot 10
@@ -816,6 +931,7 @@ const BasesLoadedRules = (() => {
       state: {
         watching,
         loaded,
+        held,
         paused,
         inning: result.inning,
         runners: result.bases,
@@ -864,6 +980,8 @@ const BasesLoadedRules = (() => {
     historyFileName,
     diffStream,
     STREAM_EVENT_KINDS,
+    feedTabs,
+    matchesTab,
   };
 })();
 if (typeof module !== "undefined" && module.exports)

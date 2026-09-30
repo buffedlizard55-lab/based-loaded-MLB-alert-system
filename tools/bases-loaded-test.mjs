@@ -54,6 +54,44 @@ for (let mask = 0; mask < 8; mask++) {
     `base mask ${mask}`,
   );
 }
+// Live-verified 2026-09-30 against game 823001 (the exact getAlertSnapshot
+// projection): with the bases empty, `linescore.offense` still carries
+// batter/onDeck/inHole and simply OMITS first/second/third, while
+// `linescore.defense` carries the FIELDING team's first/second/third basemen —
+// populated on every pitch of every game. Reading occupancy from the defensive
+// side, or treating an absent key as unknown, would either report "bases
+// loaded" for every game or never alert at all.
+const defenseTrap = game({
+  outs: 1,
+  offense: { batter: { id: 9 }, pitcher: { id: 8 } },
+  defense: {
+    pitcher: { id: 8 },
+    first: { id: 11, fullName: "First Baseman" },
+    second: { id: 12, fullName: "Second Baseman" },
+    third: { id: 13, fullName: "Third Baseman" },
+  },
+});
+check(
+  rules.evaluate(defenseTrap).loaded,
+  false,
+  "A defensive first/second/third (the fielders) is never a loaded situation",
+);
+check(
+  rules.evaluate(defenseTrap).runnersOn,
+  0,
+  "…and never counts as a runner on base",
+);
+check(
+  rules.evaluate(defenseTrap).known,
+  true,
+  "…while the snapshot itself is still fully known (absent keys mean unoccupied)",
+);
+check(
+  rules.evaluate(game({ offense: { first: { id: 1 }, second: { id: 2 } } })).runnersOn,
+  2,
+  "Only the offensive side supplies occupancy",
+);
+
 for (const state of ["Top", "Middle", "End", "", null])
   check(
     rules.evaluate(game({ inningState: state })).loaded,
@@ -725,6 +763,123 @@ check(
   "In The Hole",
   "The JSON export carries the inHole value",
 );
+
+/* ------------------------------------------- chat-feed narration (pure)
+ * diffStream() is the event emitter behind alerts.html. It is exercised
+ * end-to-end by tools/chat-feed-test.mjs, but its decisions are pure and are
+ * pinned here too: the kinds it can emit, the hold/watch distinction, and the
+ * guarantee that every kind belongs to exactly one category tab.
+ */
+
+check(
+  rules.diffStream(null, { result: {} }, game(), 0).events,
+  [],
+  "No data yet: the diff narrates nothing (an outage cannot invent a verdict)",
+);
+check(
+  rules.STREAM_EVENT_KINDS.includes("watch_held"),
+  true,
+  "watch_held is a declared stream event kind",
+);
+for (const kind of rules.STREAM_EVENT_KINDS) {
+  const tabs = rules.feedTabs.filter((tab) => tab.kinds && rules.matchesTab(tab, kind));
+  check(tabs.length, 1, `Event kind ${kind} belongs to exactly one feed tab`);
+}
+check(
+  rules.feedTabs[0].kinds,
+  null,
+  "The first tab is All, which matches every kind",
+);
+check(
+  rules.feedTabs.map((tab) => tab.key),
+  ["all", "loaded", "watch", "walkoff", "warnings"],
+  "The tab list is stable and ordered",
+);
+
+// A full episode: tied changeover → held states → loaded → cleared → walk-off.
+const tied = (overrides = {}) => {
+  const inningState = overrides.inningState ?? "Middle";
+  // isTopInning must agree with inningState: a mismatched pair is itself an
+  // "unknown" snapshot (and evaluate() refuses to reason from one).
+  return game({ inningState, isTopInning: inningState === "Top", outs: 3, ...overrides });
+};
+const feedStep = (prevObs, prevStream, overrides, at) => {
+  const g = tied(overrides);
+  const observation = rules.observe(prevObs, g, at);
+  const stream = rules.diffStream(prevStream, observation, g, at);
+  return { observation, stream, kinds: stream.events.map((event) => event.kind) };
+};
+let obsState = null;
+let streamState = null;
+let step = feedStep(obsState, streamState, {}, 1_700_000_000_000);
+check(step.kinds, ["watch_begins"], "The tied changeover into the 9th opens the watch");
+obsState = step.observation.state;
+streamState = step.stream.state;
+
+step = feedStep(obsState, streamState, { inningState: "Top", currentInning: 10, outs: 0 }, 1_700_000_001_000);
+check(step.kinds, ["watch_held"], "A tied top half of the 10th holds the watch instead of ending it");
+check(
+  step.stream.events[0].detail.includes("home team still has to bat"),
+  true,
+  "The held card explains why the situation is still alive",
+);
+check(streamState.held, false, "…and the watch state is not held while the home team is batting");
+check(step.stream.state.held, true, "The stream state records the hold");
+obsState = step.observation.state;
+streamState = step.stream.state;
+
+step = feedStep(obsState, streamState, { inningState: "Top", currentInning: 10, outs: 1 }, 1_700_000_002_000);
+check(step.kinds, [], "A hold is narrated once, not on every poll");
+obsState = step.observation.state;
+streamState = step.stream.state;
+
+step = feedStep(obsState, streamState, { inningState: "Top", currentInning: 10, outs: 1, teams: { away: { runs: 5 }, home: { runs: 4 } } }, 1_700_000_003_000);
+check(step.kinds, ["watch_ends"], "Breaking the tie in the top half really does end the watch");
+check(
+  step.stream.events[0].detail.includes("no longer tied"),
+  true,
+  "…and says so in words rather than the vague fallback",
+);
+obsState = step.observation.state;
+streamState = step.stream.state;
+
+// The home team ties it again in the bottom half: the watch re-opens, and the
+// bases loading in that half is an alert exactly like the 9th.
+step = feedStep(
+  obsState,
+  streamState,
+  {
+    inningState: "Bottom",
+    currentInning: 10,
+    outs: 1,
+    teams: { away: { runs: 5 }, home: { runs: 5 } },
+    offense: { first: { id: 1 }, second: { id: 2 }, third: { id: 3 } },
+  },
+  1_700_000_004_000,
+);
+check(
+  step.kinds,
+  ["watch_begins", "bases_loaded"],
+  "Re-tying in the bottom half re-opens the watch and alerts on a loaded set",
+);
+check(step.stream.state.held, false, "A batting home team is on watch, not held");
+check(step.stream.state.loaded, true, "…and the stream state records the loaded situation");
+
+// A delayed tied game is neither a hold nor an end: the watch is paused.
+const pausedGame = tied({ inningState: "Top", currentInning: 10, outs: 0 });
+pausedGame.status = { abstractGameState: "Live", detailedState: "Delayed" };
+const pausedStream = rules.diffStream(
+  streamState,
+  { result: rules.evaluate(pausedGame), event: null },
+  pausedGame,
+  1_700_000_005_000,
+);
+check(
+  pausedStream.events.map((event) => event.kind),
+  [],
+  "A delay in the top half narrates neither a hold nor an end",
+);
+check(pausedStream.state.held, false, "A paused game is never reported as held");
 
 check(
   readFileSync(new URL("../index.html", import.meta.url), "utf8"),

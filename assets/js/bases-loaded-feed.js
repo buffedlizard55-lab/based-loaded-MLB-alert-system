@@ -49,6 +49,11 @@
     notificationsEnabled = false,
     audio,
     demoStep = 0;
+  // Which tab of the feed is showing (the replay feed's tabs, for this feed's
+  // categories). Purely a view filter: it never touches the rules, the polls
+  // or the alerts — hiding a card cannot hide a situation.
+  let feedFilter = "all";
+  const TABS = rules.feedTabs;
 
   const QUIET_MS = 90000;
 
@@ -171,6 +176,7 @@
       {
         watch_begins: "On Watch",
         watch_ends: "Watch Ends",
+        watch_held: "Watch Held",
         runner_advanced: "Runner Reaches",
         bases_loaded: "⚾ BASES LOADED",
         tension_update: "Tension Rising",
@@ -475,6 +481,8 @@
         return `BASES NO LONGER LOADED · ${away} @ ${home}${score ? ` ${score}` : ""}`;
       case "watch_ends":
         return `WATCH OVER · ${away} @ ${home}${score ? ` ${score}` : ""}`;
+      case "watch_held":
+        return `WATCH HELD · ${away} @ ${home}${score ? ` ${score}` : ""} — tied, home team still to bat`;
       case "paused":
         return `⏸ PAUSED · ${away} @ ${home} — ${escape(ev.detail || "Delayed")}`;
       case "resumed":
@@ -582,23 +590,70 @@
     </article>`;
   }
 
+  /**
+   * Late ties whose play is stopped (rain delay, suspension). The monitor
+   * counts these the same way and so does this page: the watch is HELD. A
+   * delay in an early inning, or one that is not tied, is not this page's
+   * business and must never inflate a counter.
+   */
+  function pausedLateRows() {
+    return [...snapshots.values()].filter(
+      (s) =>
+        !s.error &&
+        rules.isPaused((s.game || s)?.status) &&
+        s.result?.known &&
+        s.result.tied === true &&
+        Number.isInteger(s.result.inning) &&
+        s.result.inning >= 9,
+    );
+  }
+
+  /**
+   * The live picture: which games are loaded right now, which are on watch
+   * (tied, home half in progress), and which are *held* — still tied in the
+   * 9th or later, but with the home team not batting this half. A held game is
+   * still being tracked (it re-opens the watch in the next bottom half), which
+   * is why it gets its own row and its own counter instead of vanishing.
+   */
+  function liveRows() {
+    const now = Date.now();
+    const fresh = [...snapshots.values()].filter(
+      (s) => s.result && !s.error && now - (s.at || 0) < STALE_MS * 2,
+    );
+    return {
+      loaded: fresh.filter((s) => s.result.loaded),
+      watching: fresh.filter((s) => s.result.watching && !s.result.loaded),
+      held: fresh.filter(
+        (s) =>
+          s.result.known &&
+          s.result.tied === true &&
+          Number.isInteger(s.result.inning) &&
+          s.result.inning >= 9 &&
+          !s.result.watching &&
+          rules.isLive(s.game?.status) &&
+          !rules.isPaused(s.game?.status),
+      ),
+    };
+  }
+
   function computeStats() {
     const now = Date.now();
-    const activeLoads = [...snapshots.values()].filter(
-      (s) => s.result?.loaded && !s.error && now - (s.at || 0) < STALE_MS * 2,
-    );
-    const onWatch = [...snapshots.values()].filter(
-      (s) => s.result?.watching && !s.result?.loaded && !s.error && now - (s.at || 0) < STALE_MS * 2,
-    );
-    const paused = [...snapshots.values()].filter((s) => {
-      const g = s.game || s;
-      return rules.isPaused(g?.status);
-    });
+    const rows = liveRows();
+    // Exactly one tile per game: loaded, batting (on watch), or held (tied in
+    // the 9th+ with the home team not batting — including a late tie whose
+    // play is stopped, which the monitor also renders as a held watch).
+    const pausedLate = pausedLateRows();
     const loadsToday = feed.filter(
       (e) => e.kind === "bases_loaded" && now - e.observedAt < 24 * 3600000,
     ).length;
     const walkoffs = feed.filter((e) => e.kind === "walkoff_rbi").length;
-    return { active: activeLoads.length, watch: onWatch.length + paused.length, loadsToday, walkoffs };
+    return {
+      active: rows.loaded.length,
+      watch: rows.watching.length,
+      held: rows.held.length + pausedLate.length,
+      loadsToday,
+      walkoffs,
+    };
   }
 
   /**
@@ -618,8 +673,10 @@
     const $today = $("stat-today");
     const $walkoffs = $("stat-walkoffs");
     const $events = $("stat-events");
+    const $held = $("stat-held");
     if ($active) $active.textContent = String(stats.active);
     if ($watch) $watch.textContent = String(stats.watch);
+    if ($held) $held.textContent = String(stats.held);
     if ($today) $today.textContent = String(stats.loadsToday);
     if ($walkoffs) $walkoffs.textContent = String(stats.walkoffs);
     if ($events) $events.textContent = String(feed.length);
@@ -639,8 +696,23 @@
   }
 
   const feedSignature = () =>
-    `${feed.slice(0, 100).map((e) => e.id).join("|")}#${newPks.size ? 1 : 0}#${Date.now() < newUntil ? 1 : 0}`;
+    `${feed.slice(0, 100).map((e) => e.id).join("|")}#${newPks.size ? 1 : 0}#${Date.now() < newUntil ? 1 : 0}#${feedFilter}`;
   let lastSignature = null;
+  let lastTabsSignature = null;
+  let lastStripSignature = null;
+
+  const visibleFeed = () => {
+    const tab = TABS.find((t) => t.key === feedFilter) || TABS[0];
+    return feed.filter((e) => rules.matchesTab(tab, e.kind));
+  };
+
+  const EMPTY_BY_TAB = {
+    all: `When a tied game reaches the bottom of the 9th (or later) and the bases start filling up, events will appear here live — chat style, newest first.`,
+    loaded: `No bases-loaded alert yet. This tab fills the moment a tied game in the bottom of the 9th or later has all three bases occupied with fewer than three outs.`,
+    watch: `No watch yet. A watch opens when a tied game reaches the bottom of the 9th (or any later inning) — and a "watch held" card appears when a tied game is between home halves.`,
+    walkoff: `No walk-off (or cleared bases) yet. Every resolution of a tracked situation lands here, with the official final score on the card.`,
+    warnings: `No delays, outages or resumed games yet. Anything that stops the feed from knowing the truth is listed here rather than being hidden.`,
+  };
 
   function renderFeed(force = false) {
     const sig = feedSignature();
@@ -648,22 +720,188 @@
     lastSignature = sig;
     const list = $("feed-list");
     if (!list) return false;
-    if (!feed.length) {
-      list.innerHTML = `<div class="bl-empty"><span class="bl-empty-icon">◇</span><strong>Waiting for the first qualifying situation…</strong>
-        When a tied game reaches the bottom of the 9th (or later) and the bases start filling up, events will appear here live — chat style, newest first.</div>`;
+    const rows = visibleFeed().slice(0, 100);
+    if (!rows.length) {
+      const known = feed.length > 0;
+      list.innerHTML = `<div class="bl-empty"><span class="bl-empty-icon">◇</span><strong>${
+        known ? "Nothing in this category yet" : "Waiting for the first qualifying situation…"
+      }</strong>
+        ${escape(EMPTY_BY_TAB[feedFilter] || EMPTY_BY_TAB.all)}</div>`;
       return true;
     }
-    list.innerHTML = feed
-      .slice(0, 100)
-      .map(renderRow)
-      .join("");
+    list.innerHTML = rows.map(renderRow).join("");
     return true;
+  }
+
+  /**
+   * The category tabs, built exactly like the replay feed's (`reviews.html`):
+   * pill buttons with live counts, the active one carrying `tab-on`. Counts
+   * come from the whole feed, not the filtered view, so a count never lies
+   * about what the tab would show.
+   */
+  function renderTabs(force = false) {
+    const wrap = $("feed-tabs");
+    if (!wrap) return false;
+    const counts = TABS.map((tab) => feed.filter((e) => rules.matchesTab(tab, e.kind)).length);
+    const sig = `${feedFilter}#${counts.join(",")}#${TABS.map((t) => t.key).join(",")}`;
+    if (!force && sig === lastTabsSignature) return false;
+    lastTabsSignature = sig;
+    wrap.innerHTML = "";
+    TABS.forEach((tab, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = tab.key === feedFilter ? "tab tab-on" : "tab";
+      button.textContent = `${tab.label} (${counts[index]})`;
+      button.setAttribute("data-feed-tab", tab.key);
+      button.setAttribute(
+        "aria-pressed",
+        tab.key === feedFilter ? "true" : "false",
+      );
+      button.addEventListener("click", () => setFilter(tab.key));
+      wrap.appendChild(button);
+    });
+    return true;
+  }
+
+  /** Switch tabs. A view filter only — it never touches polls or alerts. */
+  function setFilter(key) {
+    if (!TABS.some((tab) => tab.key === key) || key === feedFilter) return;
+    feedFilter = key;
+    renderTabs(true);
+    renderFeed(true);
   }
 
   function render(force = false) {
     renderStats();
     renderStatusLine();
+    renderActiveStrip(force);
+    renderTabs(force);
     renderFeed(force);
+  }
+
+  const HALF_WORD = { top: "TOP", bottom: "BOT", middle: "MID", end: "END" };
+  const halfWord = (state) => HALF_WORD[String(state || "").toLowerCase()] || "INN";
+  const matchupName = (game) =>
+    `${game?.teams?.away?.team?.name || "Away"} @ ${game?.teams?.home?.team?.name || "Home"}`;
+  const tiedScore = (r) =>
+    Number.isInteger(r.away) && Number.isInteger(r.home)
+      ? `${r.away}–${r.home} TIED`
+      : "TIED";
+
+  /** The change-sensitive fingerprint of one live row (idle ticks rebuild nothing). */
+  const stripRowSig = (s) =>
+    [
+      s.game?.gamePk,
+      String(s.game?.linescore?.inningState || "").toLowerCase(),
+      s.result?.inning,
+      s.result?.outs,
+      s.result?.balls,
+      s.result?.strikes,
+      s.result?.away,
+      s.result?.home,
+      ...(s.result?.bases || []).map((b) => b?.id ?? null),
+    ].join(":");
+
+  function stripLink(entry, type, reason, impact) {
+    const pk = entry.game?.gamePk;
+    const href = validPk(pk) ? escape(gameLink(pk)) : "#";
+    return `<a class="feed-active-link" href="${href}">
+      <span class="feed-active-game">${escape(matchupName(entry.game))}</span>
+      <span class="feed-active-type">${escape(type)}</span>
+      <span class="feed-active-reason">${escape(reason)}</span>
+      ${impact ? `<span class="feed-active-impact">${escape(impact)}</span>` : ""}
+    </a>`;
+  }
+
+  /**
+   * One row per game that is loaded, on watch, or held right now — the same
+   * "live now" strip the replay feed puts above its list, carrying this feed's
+   * situations instead of reviews. Nothing renders when nothing qualifies.
+   */
+  function renderActiveStrip(force = false) {
+    const wrap = $("active-strip");
+    if (!wrap) return false;
+    const rows = liveRows();
+    const sig = [
+      rows.loaded.map(stripRowSig).join("|"),
+      rows.watching.map(stripRowSig).join("|"),
+      rows.held.map(stripRowSig).join("|"),
+      pausedLateRows()
+        .map(
+          (s) =>
+            `${stripRowSig(s)}@${String(s.game?.status?.detailedState || "")}`,
+        )
+        .join("|"),
+    ].join("#");
+    if (!force && sig === lastStripSignature) return false;
+    lastStripSignature = sig;
+
+    const bars = [];
+    if (rows.loaded.length)
+      bars.push(`<div class="feed-active-strip">
+        <span class="feed-active-badge">🚨 BASES LOADED</span>
+        ${rows.loaded
+          .map((s) =>
+            stripLink(
+              s,
+              `${halfWord(s.game?.linescore?.inningState)} ${s.result.inning}`,
+              `${tiedScore(s.result)} · ${s.result.outs} out${s.result.outs === 1 ? "" : "s"}${
+                s.result.balls != null && s.result.strikes != null
+                  ? ` · count ${s.result.balls}-${s.result.strikes}`
+                  : ""
+              }`,
+              "WALK-OFF POSSIBLE",
+            ),
+          )
+          .join("")}
+      </div>`);
+    if (rows.watching.length)
+      bars.push(`<div class="feed-active-strip bl-strip-watch">
+        <span class="feed-active-badge">👀 ON WATCH</span>
+        ${rows.watching
+          .map((s) =>
+            stripLink(
+              s,
+              `${halfWord(s.game?.linescore?.inningState)} ${s.result.inning}`,
+              `${tiedScore(s.result)} · ${rules.occupancyLabel(s.result.bases.map(Boolean))} · ${
+                3 - s.result.runnersOn
+              } to fill`,
+              "",
+            ),
+          )
+          .join("")}
+      </div>`);
+    const pausedLate = pausedLateRows();
+    if (pausedLate.length)
+      bars.push(`<div class="feed-active-strip bl-strip-paused">
+        <span class="feed-active-badge">⏸ PAUSED · WATCH HELD</span>
+        ${pausedLate
+          .map((s) =>
+            stripLink(
+              s,
+              `${halfWord(s.game?.linescore?.inningState)} ${s.result.inning}`,
+              `${tiedScore(s.result)} · ${String(s.game?.status?.detailedState || "delayed")}`,
+              "",
+            ),
+          )
+          .join("")}
+      </div>`);
+    if (rows.held.length)
+      bars.push(`<div class="feed-active-strip bl-strip-held">
+        <span class="feed-active-badge">⏳ WATCH HELD</span>
+        ${rows.held
+          .map((s) =>
+            stripLink(
+              s,
+              `${halfWord(s.game?.linescore?.inningState)} ${s.result.inning}`,
+              `${tiedScore(s.result)} · home team still to bat`,
+              "",
+            ),
+          )
+          .join("")}
+      </div>`);
+    wrap.innerHTML = bars.join("");
+    return true;
   }
 
   /* ---------------------------------------------------------------- demo */

@@ -61,10 +61,56 @@
   margin-top: 2px;
 }
 .bl-stat-active .bl-stat-value { color: var(--live); }
+.bl-stat-held .bl-stat-value { color: #74c0fc; }
 .bl-stat-loaded .bl-stat-value { color: var(--bl-alert); text-shadow: 0 0 12px rgba(224, 49, 49, 0.4); }
 .bl-stat-watch .bl-stat-value { color: var(--bl-watch); }
 .bl-stat-tension .bl-stat-value { color: var(--bl-tension); }
 .bl-stat-walkoffs .bl-stat-value { color: var(--bl-ok); }
+
+/* ------------------------------------------------------ live-now strip
+ * Reuses the replay feed's own strip classes (.feed-active-strip / -badge /
+ * -link / -game / -type / -reason / -impact, from style.css) so the look is
+ * literally the same component; only the two non-alert variants are new here.
+ */
+.page-loaded-alerts .feed-active-strip { margin-bottom: 8px; }
+.page-loaded-alerts .feed-active-strip.bl-strip-watch {
+  background: linear-gradient(90deg, rgba(251, 146, 60, 0.22), rgba(251, 146, 60, 0.05));
+  border-color: rgba(251, 146, 60, 0.55);
+}
+.page-loaded-alerts .bl-strip-watch .feed-active-badge {
+  background: #f97316;
+  animation: none;
+}
+.page-loaded-alerts .bl-strip-watch .feed-active-type { color: #fdba74; }
+.page-loaded-alerts .feed-active-strip.bl-strip-held {
+  background: linear-gradient(90deg, rgba(116, 192, 252, 0.18), rgba(116, 192, 252, 0.04));
+  border-color: rgba(116, 192, 252, 0.45);
+}
+.page-loaded-alerts .bl-strip-held .feed-active-badge {
+  background: #3b82f6;
+  animation: none;
+}
+.page-loaded-alerts .bl-strip-held .feed-active-type { color: #74c0fc; }
+.page-loaded-alerts .feed-active-strip.bl-strip-paused {
+  background: linear-gradient(90deg, rgba(245, 159, 0, 0.2), rgba(245, 159, 0, 0.05));
+  border-color: rgba(245, 159, 0, 0.5);
+}
+.page-loaded-alerts .bl-strip-paused .feed-active-badge {
+  background: #f59f00;
+  color: #1b1200;
+  animation: none;
+}
+.page-loaded-alerts .bl-strip-paused .feed-active-type { color: #ffd43b; }
+
+/* ----------------------------------------------------------------- tabs
+ * The replay feed's own .tabs / .tab / .tab-on pills (style.css), fitted to
+ * this page's 980px column instead of the full-width feed layout.
+ */
+.page-loaded-alerts .bl-tabs {
+  padding: 16px 0 0;
+  margin: 0;
+}
+.page-loaded-alerts .bl-tabs .tab { font-size: 12.5px; padding: 5px 13px; }
 
 /* -------------------------------------------------------------- feed area */
 .bl-main {
@@ -103,6 +149,7 @@
 .bl-row-kind-runner_advanced,
 .bl-row-kind-half_change   { border-left: 4px solid var(--bl-watch); }
 .bl-row-kind-watch_begins  { border-left: 4px solid #74c0fc; }
+.bl-row-kind-watch_held    { border-left: 4px dashed #74c0fc; }
 .bl-row-kind-watch_ends,
 .bl-row-kind-bases_cleared { border-left: 4px solid #8896ab; }
 .bl-row-kind-paused        { border-left: 4px solid #f59f00; }
@@ -151,6 +198,7 @@
 .chip-runner_advanced { background: rgba(251,146,60,0.16); color: #fdba74; border-color: rgba(251,146,60,0.5); }
 .chip-half_change  { background: rgba(251,146,60,0.12); color: #fdba74; border-color: rgba(251,146,60,0.4); }
 .chip-watch_begins { background: rgba(116,192,252,0.12); color: #74c0fc; border-color: rgba(116,192,252,0.4); }
+.chip-watch_held  { background: rgba(116,192,252,0.10); color: #a5d8ff; border-color: rgba(116,192,252,0.35); border-style: dashed; }
 .chip-watch_ends,
 .chip-bases_cleared{ background: rgba(136,150,171,0.15); color: #c5d4e8; border-color: rgba(136,150,171,0.35); }
 .chip-paused       { background: rgba(245,159,0,0.15); color: #ffd43b; border-color: rgba(245,159,0,0.45); }

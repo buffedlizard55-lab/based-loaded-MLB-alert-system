@@ -41,12 +41,50 @@ shows the scan's own fields (score, inning, half, outs) and defers the rest.
 Clicking a desktop notification focuses the monitor and outlines the card for that
 game (`HIGHLIGHT_MS`, 8 s) without navigating away, so the watcher keeps running.
 
+## Chat feed (`alerts.html`)
+
+The chat page is the same situation, narrated in the replay feed's language: a
+timestamped card per event, an event chip, the inning badge, ✓/✗ outcome
+badges, a live-now strip above the list, category tabs with live counts, and a
+status line. It reads the same rules engine (`BasesLoadedRules.evaluate` /
+`observe` / `diffStream`), the same official snapshot projection and the same
+storage as the monitor, so the two pages cannot disagree about what the
+situation is.
+
+| Feed event | Meaning |
+| --- | --- |
+| `watch_begins` | A tied game reached the bottom of the 9th (or later) — the watch is on. Also re-fires for each later bottom half while the game stays tied. |
+| `watch_held` | The game is **still tied and still in the 9th or later**, but the home team is not batting this half (top half, or the changeover after its half). The monitor's slate says the same thing in its own words (`TIED · TOP HALF · HOME STILL TO BAT`, `TIED · HOME HALF OVER · WATCH CONTINUES`), and the next bottom half re-opens the watch. Narrated once per hold — including the first sight of such a game, which is the brief's "begin tracking when there is a tie game going to the bottom of the 9th or later". |
+| `runner_advanced` | A runner reached while the watch is on: "one away", "two away". |
+| `bases_loaded` | The alert itself: tied, bottom 9+, all three bases occupied, fewer than three outs. Chime + desktop notification once per continuous situation. |
+| `tension_update` | Outs/count pushed the tension higher while still loaded (0–5 scale). |
+| `walkoff_rbi` | The home team took the lead from a loaded (or watched) bottom half — a walk-off. |
+| `bases_cleared` | The loaded situation ended without a walk-off (third out, runner retired). |
+| `watch_ends` | The tie is gone (or the game left the window) — the watch really is over. |
+| `half_change`, `paused`, `resumed`, `final`, `data_unavailable` | Inning changes while tied, delays and suspensions (watch held), resumption, final scores, and snapshots that did not arrive. An outage never fabricates a verdict. |
+
+The tabs are a **view filter only** (`All`, `⚾ Bases Loaded`, `👀 On Watch`,
+`🎉 Walk-offs`, `⚠️ Warnings`): they never touch the polls, the rules or the
+alert pipeline, and the counts come from the whole feed, not the filtered view.
+Every event kind belongs to exactly one tab — `tools/bases-loaded-test.mjs`
+asserts that partition, so a new kind can never silently disappear from every
+tab.
+
+The **live-now strip** renders one row per game that is loaded (`🚨 BASES
+LOADED … WALK-OFF POSSIBLE`), on watch (`👀 ON WATCH … n to fill`), held
+(`⏳ WATCH HELD … home team still to bat`) or stopped (`⏸ PAUSED · WATCH HELD`),
+using the replay feed's own strip classes. The monitor and the chat page count
+those same states in the same way — a stopped late tie is a held watch on both,
+and an early or untied delay is counted nowhere.
+
 ## Decision table
 
 | Official state | Behavior |
 | --- | --- |
-| Top 9+, tied, 0–2 outs | Scan but do not put on watch or alert, even if loaded |
+| Top 9+, tied, 0–2 outs | Scan but do not put on watch or alert, even if loaded. The chat feed narrates it as a **held** watch (the tie is still being tracked) |
 | Top 9+, tied, third out / Middle 9+ | On watch; do not use leftover top-half runners for an alert |
+| End of a tied home half, or any half where a tied game's home team is not batting | Held, not over: the tie is still live and the next home half re-opens the watch |
+| Tie broken while the watch is held | `watch_ends` — the game is no longer tied, so no walk-off situation can follow this inning |
 | Bottom 9+, tied, 0–2 outs, zero to two bases occupied | On watch |
 | Bottom 9+, tied, 0–2 outs, all three bases occupied | Alert |
 | Bottom 10, 11, 12, 13, 14… | Exactly the same rule, without an upper limit |
@@ -123,9 +161,10 @@ Same discovery (today + yesterday in America/New_York, 15 s), same late-inning c
 ## Tests and demo
 
 ```sh
-node tools/bases-loaded-test.mjs
-node tools/bases-loaded-monitor-test.mjs
-node tools/bases-loaded-strip-test.mjs
+node tools/bases-loaded-test.mjs          # rules + the pure chat-feed narration (diffStream)
+node tools/bases-loaded-monitor-test.mjs  # the situation monitor
+node tools/bases-loaded-strip-test.mjs    # the site-wide strip
+node tools/chat-feed-test.mjs             # the chat feed (alerts.html)
 ```
 
 Tests include an exhaustive 11,520-case matrix (innings 1–30 × four half-inning states × 0–3 outs × trailing/tied/leading × eight occupancy patterns), malformed/duplicate runner data, delay/resumption continuity, and cover inning/half/score/outs boundaries, all eight occupancy combinations, all listed routes without keyword inference, changeovers, walk-offs, final/delay status, incomplete data, immutable snapshots, dedup/re-arm/refresh, API projection, Eastern midnight/DST, failed polls, hidden-tab pause/resume, stale-state expiry, overlapping refresh, storage failures, opt-in notifications and isolated demo mode. The strip suite adds the shared helpers (`scanTarget`, `pollCadence`, `recentSharedAlert`, `occupancyLabel`), the page-wiring contract (which pages mount the strip, which intentionally do not, and that `api.js` loads first), and a deterministic DOM/clock/API-stub run of the controller: watch line, partial occupancy, first alert, repeat polls, cleared-and-reloaded, extra innings 10–17, cross-page quiet window, fresh page load mid-situation, hidden-tab pause, cadence 30s/5s, stale and failed snapshots, blocked storage, a missing api client, dismissal and demo mode.

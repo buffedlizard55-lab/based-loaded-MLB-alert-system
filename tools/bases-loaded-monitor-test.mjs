@@ -781,6 +781,16 @@ check(
   "The held watch still counts as a tied bottom-9+ game",
 );
 check(
+  pausedApp.nodes["watch-count"].textContent,
+  1,
+  "The watch-window tile counts the held game the On-watch list is showing",
+);
+check(
+  pausedApp.nodes["active-count"].textContent,
+  0,
+  "…without ever counting a paused game as a live alert",
+);
+check(
   pausedApp.nodes.board.innerHTML.includes("PAUSED · STILL TIED · WATCH HELD"),
   true,
   "The slate explains the paused row",

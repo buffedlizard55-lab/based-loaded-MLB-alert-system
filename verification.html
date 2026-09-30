@@ -147,7 +147,7 @@
                   <code>index.html</code> / <code>bases-loaded.html</code>
                 </td>
                 <td>
-                  <code>node tools/bases-loaded-test.mjs</code> (11,772 checks);
+                  <code>node tools/bases-loaded-test.mjs</code> (11,806 checks);
                   open <code>?demo=1</code> and step to the alert scenarios
                 </td>
               </tr>
@@ -209,6 +209,29 @@
                 <td>
                   The rule suite covers innings 1–30; the demo includes bottom
                   14 and a tying bottom-15 walk
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  A tied game must never be dropped or called over while the home
+                  team still has a half to bat (top half, between halves, or a
+                  late tie whose play is stopped)
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  <code>BasesLoadedRules.diffStream()</code> emits
+                  <code>watch_held</code> (once per hold, persisted across a
+                  reload) and only reports <code>watch_ends</code> when the tie
+                  is actually gone; the chat page counts it in its own
+                  <em>Watch held</em> tile and renders it on the strip; a stopped
+                  late tie is a held watch on both front ends
+                </td>
+                <td>
+                  <code>node tools/chat-feed-test.mjs</code> (top half, end of a
+                  home half, first sight, reload mid-hold, tie broken, a delay
+                  that is not a hold and an early delay that is not counted);
+                  <code>node tools/bases-loaded-test.mjs</code> pins the pure
+                  narration and the tab partition
                 </td>
               </tr>
               <tr>
@@ -287,13 +310,19 @@
                   column, event chip, inning badge, ✓/✗ outcome badges, summary
                   counters and a status line — narrating watch → runners →
                   bases loaded → tension → resolution for tied bottom-9+
-                  games only
+                  games only. Since 2026-09-30 it also uses the replay feed's
+                  own <strong>live-now strip</strong>
+                  (<code>.feed-active-strip</code>, one row per loaded / on-watch
+                  / held / stopped game) and its <strong>pill tabs</strong>
+                  (<code>All · Bases Loaded · On Watch · Walk-offs ·
+                  Warnings</code>) as a view filter
                 </td>
                 <td>
                   <code>alerts.html?demo=1</code> walks a full walk-off story;
-                  <code>node tools/chat-feed-test.mjs</code> (90 checks) drives
+                  <code>node tools/chat-feed-test.mjs</code> (152 checks) drives
                   the controller offline through the whole story, extra
-                  innings, outages, the cross-page quiet window and reloads
+                  innings, held watches, the strip, the tabs, outages, the
+                  cross-page quiet window and reloads
                 </td>
               </tr>
               <tr>
@@ -710,12 +739,12 @@
           </li>
           <li>
             <strong>Live end-to-end proof is still pending.</strong> The rule
-            engine is covered by 11,772 deterministic checks, the monitor by 99,
-            the chat-style feed by 90, the strip by 160, the always-on watcher by
+            engine is covered by 11,806 deterministic checks, the monitor by 101,
+            the chat-style feed by 152, the strip by 160, the always-on watcher by
             173, its deployment recipes by 112, the Web Push implementation by 130
             (the RFC 8291 and RFC 8292 test vectors, intermediate values included),
-            the phone-alerts panel by 74 and the static site by 375 checks (counts
-            as of 2026-09-30), and the
+            the phone-alerts panel by 74 and the static site by 395 checks (counts
+            as of 2026-09-30, session 2), and the
             published copy of this site is verified by
             <code>tools/deployed-site-test.mjs</code> on every merge and
             nightly — but the honest next acceptance test is a real tied game
@@ -747,13 +776,129 @@
           </li>
         </ul>
         <div class="doc-sub">
+          <h3>Verification log — 2026-09-30 (session 2: held watches, tabs, strip)</h3>
+          <ul class="doc-list">
+            <li>
+              <span class="doc-badge warn">Corrected</span>
+              <strong>The chat feed called a tied game “over”.</strong> When a tied
+              game finished its home half — or was in the <em>top</em> of an extra
+              inning — the feed wrote <em>“No longer in a qualifying
+              situation.”</em> while the monitor's slate said
+              <code>TIED · TOP HALF · HOME STILL TO BAT</code> on the same poll.
+              There is now a <code>watch_held</code> event: still tied, still in
+              the 9th or later, home team simply not batting this half. It fires
+              once per hold (including the first sight of such a game, which is
+              the brief's “begin tracking …”), survives a reload through the
+              persisted stream state, and a hold that ends without the home team
+              batting again is reported as a real <code>watch_ends</code>
+              (“The game is no longer tied”).
+            </li>
+            <li>
+              <span class="doc-badge warn">Corrected</span>
+              <strong>The chat's “On watch” tile counted the wrong games.</strong>
+              It added every paused game to the on-watch count, including a rain
+              delay in the 3rd inning of a game that was not tied. Paused games
+              are now filtered exactly as the monitor filters them (tied, 9th or
+              later) and counted as <em>held</em>, not as batting; the strip gains
+              a matching <code>⏸ PAUSED · WATCH HELD</code> row.
+            </li>
+            <li>
+              <span class="doc-badge warn">Corrected</span>
+              <strong>The monitor's watch-window tile contradicted its own
+              list.</strong> A delayed tied game in the 10th was rendered in the
+              On-watch list as <code>PAUSED · STILL TIED · WATCH HELD</code> while
+              the <code>IN THE WATCH WINDOW</code> tile read 0. The tile now counts
+              the held game it is showing — and still never counts it as a live
+              alert.
+            </li>
+            <li>
+              <span class="doc-badge ok">Shipped</span>
+              <strong>Live-now strip and category tabs on the chat feed</strong> —
+              the two components of the replay feed it claims to mirror and did not
+              have. The strip reuses the replay feed's own classes
+              (<code>.feed-active-strip</code> / <code>-badge</code> /
+              <code>-link</code> / <code>-game</code> / <code>-type</code> /
+              <code>-reason</code> / <code>-impact</code>, from
+              <code>style.css</code>), so the look is that component rather than a
+              copy of it. The tabs are defined once in the rules engine
+              (<code>BasesLoadedRules.feedTabs</code>) and are a view filter only:
+              they cannot change what is polled or alerted, and a test asserts they
+              partition every event kind exactly once.
+            </li>
+            <li>
+              <span class="doc-badge ok">Passed</span>
+              Deterministic suites re-run after every change:
+              <code>node tools/bases-loaded-test.mjs</code> (rule suite, now also
+              pinning the pure chat narration), <code>chat-feed-test.mjs</code>
+              (90 → 152 checks), <code>bases-loaded-monitor-test.mjs</code> (99 →
+              101), <code>bases-loaded-strip-test.mjs</code> (160),
+              <code>watcher-test.mjs</code> (173),
+              <code>site-links-test.mjs</code> (375 → 395) and
+              <code>icons-test.mjs</code> (153).
+            </li>
+            <li>
+              <span class="doc-badge ok">Verified</span>
+              Mutation probes, each reverted afterwards: removing the
+              <code>watch_held</code> branch, letting a paused game count as held,
+              making the tab filter match everything, dropping the paused strip
+              row, dropping the held counter, and reverting the monitor's
+              watch-window tile. All six are caught by the suites above — the
+              checks are live, not decorative.
+            </li>
+            <li>
+              <span class="doc-badge ok">Verified live</span>
+              <strong>The official payloads this alert depends on were re-read from
+              the MLB StatsAPI on 2026-09-30</strong> (the session's page-fetch
+              path reaches the API even though the sandbox blocks raw socket
+              egress): the dated schedule
+              (<a href="https://statsapi.mlb.com/api/v1/schedule?sportId=1&amp;date=2026-09-30"
+                ><code>?sportId=1&amp;date=2026-09-30</code></a
+              > — four Wild Card games, all <code>Preview</code>), and the exact
+              <code>getAlertSnapshot</code> projection
+              (<a href="https://statsapi.mlb.com/api/v1.1/game/823001/feed/live?fields=gamePk,gameData,status,abstractGameState,detailedState,statusCode,liveData,plays,currentPlay,result,description,event,eventType,rbi,awayScore,homeScore,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,offense,defense,first,second,third,id,fullName,balls,strikes,batter,pitcher,onDeck,inHole"
+                >game 823001</a
+              >): <code>currentInning</code>, <code>inningState</code>,
+              <code>isTopInning</code>, <code>outs</code>,
+              <code>teams.*.runs</code>, <code>offense.batter/onDeck/inHole</code>
+              and <code>plays.currentPlay.result</code> are all present exactly as
+              the projection requests, and with the bases empty the
+              <code>offense.first/second/third</code> keys are <em>absent</em>
+              (which <code>evaluate()</code> reads as unoccupied).
+            </li>
+            <li>
+              <span class="doc-badge warn">Irregularity found (flagged, and now
+              pinned)</span>
+              The same live payload shows that <code>linescore.defense</code>
+              carries the <em>fielding</em> team's first, second and third
+              basemen — populated on every pitch of every game — alongside
+              <code>defense.batter/onDeck/inHole</code> (the fielding team's next
+              hitters). Reading occupancy or due-up context from the defensive
+              side would therefore report “bases loaded” for every game. This
+              alert reads occupancy and due-up from
+              <code>linescore.offense</code> only, and
+              <code>tools/bases-loaded-test.mjs</code> now carries a defensive-side
+              fixture that must never count as a base or a runner.
+            </li>
+            <li>
+              <span class="doc-badge warn">Still open</span>
+              No screenshot test exists in this repository, so the pixels of the
+              strip and the tabs are reviewed by eye on a real screen; the
+              structure, the class reuse and the published bytes are what the
+              suites assert.
+            </li>
+          </ul>
+        </div>
+
+        <div class="doc-sub">
           <h3>Verification log — 2026-09-29</h3>
           <ul class="doc-list">
             <li>
               <span class="doc-badge ok">Passed</span>
               Rule engine: <code>node tools/bases-loaded-test.mjs</code> —
-              11,772 checks, including an 11,520-case inning/half/outs/score/
-              occupancy matrix and all eight occupancy patterns.
+              11,806 checks, including an 11,520-case inning/half/outs/score/
+              occupancy matrix, all eight occupancy patterns, and the pure
+              chat-feed narration (<code>diffStream()</code>: the watch → hold →
+              loaded → cleared → walk-off episode and the tab partition).
             </li>
             <li>
               <span class="doc-badge ok">Passed</span>
@@ -780,9 +925,10 @@
             </li>
             <li>
               Monitor controller: <code>node tools/bases-loaded-monitor-test.mjs</code>
-              — 99 checks, including the export/download wiring, the live-slate rows, the scheduled-game
-              row, the off-day message, the held watch during a delay, and the
-              notification click that focuses the alerting card.
+              — 101 checks, including the export/download wiring, the live-slate rows, the scheduled-game
+              row, the off-day message, the held watch during a delay (counted by
+              the watch-window tile without ever being counted as a live alert),
+              and the notification click that focuses the alerting card.
             </li>
             <li>
               <span class="doc-badge ok">Passed</span>
@@ -793,7 +939,7 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              375 checks: every internal link target on every page exists, no
+              395 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still
