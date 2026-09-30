@@ -32,6 +32,14 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 ```text
 Review the repo.
 
+i want the site to look like https://buffedlizard55-lab.github.io/POSTSEASONMLBALERTS/reviews.html
+
+The bases loaded alert system should look like the ABS challenge alert system and chat style live updating but for bases loaded situations.
+
+It should have an alert system like it that alerts me to situations about the bases loaded described in this prompt.  It should work and have the same alert system everything similar to https://buffedlizard55-lab.github.io/POSTSEASONMLBALERTS/reviews.html.
+
+the bases loaded site should look similar to the site that we copied MLB live PBP.  The alert system, the notification, everything should be exactly like that except that we're tracking bases loaded situations in late innings.
+
 I want to add functionality to this site
 
 https://buffedlizard55-lab.github.io/MLB-Live-PBP/reviews.html
@@ -112,6 +120,7 @@ See [the detection rules, coverage and limitations](docs/bases-loaded-alerts.md)
 ```bash
 node tools/bases-loaded-test.mjs         # rules engine
 node tools/bases-loaded-monitor-test.mjs # monitor page controller
+node tools/chat-feed-test.mjs            # chat-style feed (alerts.html) controller
 node tools/bases-loaded-strip-test.mjs   # site-wide strip + page wiring
 node tools/watcher-test.mjs              # the always-on watcher (same rules, no browser)
 node tools/watcher-deploy-test.mjs       # deployment recipes vs. the watcher's real settings
@@ -123,7 +132,7 @@ node tools/icons-test.mjs                # installability: manifest, icons, page
 node tools/deployed-site-test.mjs        # the published site itself (network)
 ```
 
-These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. `webpush-test.mjs` reproduces the published RFC 8291 and RFC 8292 vectors value by value
+These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. `chat-feed-test.mjs` drives the chat-style feed (`alerts.html`) through the same deterministic DOM, clock and API stub: the full watch→build→loaded→tension→cleared→reload→walk-off story, extra innings, a failed-fetch outage that must never fabricate a verdict, the cross-page quiet window, a page reload that must not re-alert, and zero idle DOM rebuilds. `webpush-test.mjs` reproduces the published RFC 8291 and RFC 8292 vectors value by value
 (including the intermediate HKDF steps) and decrypts the RFC's message with an independently
 written receiver; `push-alerts-test.mjs` drives every branch of the subscribe panel — including
 a refused permission prompt, a subscribe that throws, and a clipboard that refuses to copy.
@@ -226,12 +235,12 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
 6. **Live end-to-end proof still pending.** Deterministic suites cover 11,772 rule states
-   plus 99 monitor, 160 strip, 173 watcher, 112 deployment, 130 Web Push, 74 phone-alert,
-   153 installability and 347 site checks, and a published-site check verifies the
-   deployment itself (counts as of 2026-09-29), but a live qualifying game has not yet
-   been observed end-to-end from this deployment, and no alert has yet arrived on a real
-   phone through a real push service — the next live tied bottom-9+ game is the real
-   acceptance test.
+   plus 99 monitor, 90 chat-feed, 160 strip, 173 watcher, 112 deployment, 130 Web Push,
+   74 phone-alert, 153 installability and 375 site checks, and a published-site check
+   verifies the deployment itself (counts as of 2026-09-30), but a live qualifying game
+   has not yet been observed end-to-end from this deployment, and no alert has yet arrived
+   on a real phone through a real push service — the next live tied bottom-9+ game is the
+   real acceptance test.
 7. **Development-sandbox network limit (partially closed, still flagged).** Raw socket
    egress from this sandbox is blocked (`curl`/`node fetch` to `statsapi.mlb.com` die with
    `SSL_ERROR_SYSCALL`, HTTP 000), so the watcher and the live smoke suite cannot run
@@ -335,11 +344,61 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    delays — color-coded by event kind, newest first, with new-item flash and a
    `?demo=1` guided walk-off scenario. `BasesLoadedRules.diffStream()` in
    `assets/js/bases-loaded-core.js` is the pure event emitter (existing `observe()`
-   contract unchanged; monitor behavior untouched). Still open for a future pass:
+   contract unchanged; monitor behavior untouched). **Hardened and test-covered on
+   2026-09-30** — see that session log. Still open for a future pass:
    (a) richer micro-events (batter changes, pitch-by-pitch tension micro-updates,
    `tension_relief` after a foul/ball), (b) a date-picker on the chat (currently
    "today + yesterday carryovers", same as the monitor), (c) wiring server-side watcher
    pushes through the service worker so a chat entry appears while the tab is closed.
+
+## Session log — 2026-09-30 (chat feed hardened + covered by its own suite)
+
+The prompt's focus this session: the bases-loaded alert system must look and behave
+like the ABS-challenge / replay feed it was copied from (chat-style, live updating),
+and it must be *verified*, not just described. The chat feed shipped on 2026-09-29
+but was the one front end with no deterministic test and several latent bugs.
+
+**Bugs found by line-by-line review and fixed**
+
+- `shouldPoll()` handed `rules.scanTarget()` the stream record instead of the saved
+  `observe()` state, so the `active` keep-alive flag was always `undefined` — a loaded
+  game whose published inning momentarily regressed could silently drop out of the chat
+  feed's polling. Now the feed passes `stream.observationState`, the same object shape
+  the monitor uses.
+- A failed live-snapshot fetch was a silent early return: the feed's own contract says
+  data issues are narrated, but no `data_unavailable` card could ever appear. Fetch
+  failures now run through `diffStream()` — one card per error episode — with an empty
+  `known:false` result so an outage can never fabricate a walk-off or a final verdict
+  from a stale score.
+- `render()` rebuilt the whole card list on the one-second heartbeat, restarting the
+  new-row flash animation every tick and swapping links under the pointer. Rendering is
+  now split: cheap counters/status every tick, card list rebuilt only when a signature
+  of the visible events changes.
+- The "every 2s / every 15s" label and the countdown were computed from a different
+  condition than the timer itself, so the page could say one thing and poll at another.
+  Both now read the single `cadenceMs()` the timer is armed with.
+- Games that fell off the official slate were never removed from the chat's stat map
+  (the monitor already pruned them); they are now pruned the same way.
+
+**Parity with the replay-feed look**
+
+- Outcome badges in the style of the replay feed's ✓/✗ verdicts: ✓ Walk-off,
+  ✗ No walk-off, ✗ Watch over, — Final, so a terminal card reads at a glance.
+- A replay-feed-style status line under the cards: `N games · M feed events · updated
+  … · refreshing every 2s/15s`.
+
+**New deterministic suite — `tools/chat-feed-test.mjs` (90 checks)**
+
+Same harness shape as the strip suite (DOM + clock + StatsAPI stub, all offline). It
+pins the alerts.html wiring contract, then drives the controller through: the full
+watch→build→loaded→tension→cleared→reload→walk-off story with the chime and desktop
+notification firing exactly where due; bottom-10 alerting; a failed-fetch outage
+(narrated once, no fabricated verdict); the cross-page quiet window (card yes, chime
+no); a page reload mid-situation (history restored, no duplicate alert, no re-chime);
+the guided demo (no network at all); and zero idle DOM rebuilds. Two mutation probes
+(gate removed, outage swallowed) both fail the suite, so the checks are live, not
+decorative. Wired into CI and documented above. The README's prompt block also now
+carries the 2026-09-30 wording (site should look like the POSTSEASONMLBALERTS feed).
 
 ## Session log — 2026-09-29 (three verification passes)
 

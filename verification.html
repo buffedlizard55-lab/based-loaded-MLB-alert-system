@@ -273,6 +273,52 @@
               </tr>
               <tr>
                 <td>
+                  “the bases loaded alert system should look like the ABS
+                  challenge alert system and chat style live updating” /
+                  “the site should look like the POSTSEASONMLBALERTS
+                  reviews.html feed”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  <code>alerts.html</code> +
+                  <code>assets/js/bases-loaded-feed.js</code> +
+                  <code>assets/css/bases-loaded-feed.css</code>: a chat-style
+                  timeline with the replay feed's card language — timestamp
+                  column, event chip, inning badge, ✓/✗ outcome badges, summary
+                  counters and a status line — narrating watch → runners →
+                  bases loaded → tension → resolution for tied bottom-9+
+                  games only
+                </td>
+                <td>
+                  <code>alerts.html?demo=1</code> walks a full walk-off story;
+                  <code>node tools/chat-feed-test.mjs</code> (90 checks) drives
+                  the controller offline through the whole story, extra
+                  innings, outages, the cross-page quiet window and reloads
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  “It should work and have the same alert system … the
+                  notification, everything should be exactly like that”
+                </td>
+                <td><span class="doc-badge ok">Done</span></td>
+                <td>
+                  The feed uses the same rules engine
+                  (<code>BasesLoadedRules.diffStream()</code>), the same
+                  official snapshot projection, the same chime/desktop
+                  notification opt-ins and the same cross-page quiet window as
+                  the monitor — one situation can never alert differently on
+                  the two pages
+                </td>
+                <td>
+                  <code>node tools/chat-feed-test.mjs</code> asserts chime and
+                  notification fire exactly once per alert, a continuous
+                  situation never re-alerts, and a confirmed exit and reload
+                  alerts again
+                </td>
+              </tr>
+              <tr>
+                <td>
                   “include all relevant information … official verified links as
                   sources for review”
                 </td>
@@ -665,10 +711,11 @@
           <li>
             <strong>Live end-to-end proof is still pending.</strong> The rule
             engine is covered by 11,772 deterministic checks, the monitor by 99,
-            the strip by 160, the always-on watcher by 173, its deployment recipes
-            by 112, the Web Push implementation by 130 (the RFC 8291 and RFC 8292
-            test vectors, intermediate values included), the phone-alerts panel by
-            74 and the static site by 347 checks (counts as of 2026-09-29), and the
+            the chat-style feed by 90, the strip by 160, the always-on watcher by
+            173, its deployment recipes by 112, the Web Push implementation by 130
+            (the RFC 8291 and RFC 8292 test vectors, intermediate values included),
+            the phone-alerts panel by 74 and the static site by 375 checks (counts
+            as of 2026-09-30), and the
             published copy of this site is verified by
             <code>tools/deployed-site-test.mjs</code> on every merge and
             nightly — but the honest next acceptance test is a real tied game
@@ -746,7 +793,7 @@
             <li>
               <span class="doc-badge ok">Passed</span>
               Site integrity: <code>node tools/site-links-test.mjs</code> —
-              347 checks: every internal link target on every page exists, no
+              375 checks: every internal link target on every page exists, no
               root-absolute paths, every external source is HTTPS, no
               third-party scripts, well-formed tags and table columns, the
               project prompt and the verbatim Rule 5.08(b) sentence are still

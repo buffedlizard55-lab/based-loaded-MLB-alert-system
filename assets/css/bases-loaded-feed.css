@@ -197,6 +197,31 @@
 .tension-pill-high { background: rgba(251,146,60,0.18); color: #fdba74; border-color: rgba(251,146,60,0.5); }
 .tension-pill-max  { background: rgba(224,49,49,0.2); color: #ff8787; border-color: rgba(224,49,49,0.6); animation: pulse-live 1.2s infinite; }
 
+/* outcome badge, in the style of the replay feed's ✓ overturned / ✗ stands */
+.bl-result {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.bl-result-win   { background: rgba(52,211,153,0.18); color: #6ee7b7; border-color: rgba(52,211,153,0.55); }
+.bl-result-out   { background: rgba(136,150,171,0.16); color: #c5d4e8; border-color: rgba(136,150,171,0.4); }
+.bl-result-final { background: rgba(167,139,250,0.16); color: #c4b5fd; border-color: rgba(167,139,250,0.4); }
+@media (max-width: 560px) {
+  .bl-result { margin-left: 0; }
+}
+
+/* bottom status line (games · events · updated · cadence) */
+.page-loaded-alerts .status-line {
+  max-width: 980px;
+  margin: 14px auto 0;
+  padding: 0 20px;
+}
+
 .bl-title {
   margin: 0 0 4px;
   font-size: 15px;
