@@ -327,6 +327,19 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    decision about *this* request (400/401/403/404/410/413) are reported once and not
    retried. All of it is covered by `tools/watcher-test.mjs` with an injected clock.
 8. ~~Browser-grade Web Push.~~ **Shipped this session** — see the session log below.
+9. ~~Chat-style live feed (the "ABS challenge" look for bases loaded).~~ **Shipped this
+   session**: `alerts.html` is a chat-style live timeline (mirroring the visual language
+   of the POSTSEASONMLBALERTS / MLB-Live-PBP ABS-challenge feed) that narrates every
+   step toward a tied, bases-loaded, bottom-9+ walk-off — watch begins, runners
+   reaching, bases loading, tension rising, walk-off / bases clear / extra innings /
+   delays — color-coded by event kind, newest first, with new-item flash and a
+   `?demo=1` guided walk-off scenario. `BasesLoadedRules.diffStream()` in
+   `assets/js/bases-loaded-core.js` is the pure event emitter (existing `observe()`
+   contract unchanged; monitor behavior untouched). Still open for a future pass:
+   (a) richer micro-events (batter changes, pitch-by-pitch tension micro-updates,
+   `tension_relief` after a foul/ball), (b) a date-picker on the chat (currently
+   "today + yesterday carryovers", same as the monitor), (c) wiring server-side watcher
+   pushes through the service worker so a chat entry appears while the tab is closed.
 
 ## Session log — 2026-09-29 (three verification passes)
 
