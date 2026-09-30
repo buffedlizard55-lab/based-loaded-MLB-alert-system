@@ -653,6 +653,31 @@
           instead of an all-clear, and a delay or suspension holds the watch
           rather than pretending the situation ended.
         </p>
+        <p class="doc-note" style="margin-top: 10px">
+          <strong
+            >Real-data proof — 2026-08-30, Padres @ Rays (gamePk 822933).</strong
+          >
+          Seven payloads were captured from the official feed with the StatsAPI's
+          own <code>timecode</code> replay parameter and pinned in
+          <code>tools/fixtures/official-snapshots-822933.json</code>; every entry
+          keeps the exact URL it came from, and
+          <code>tools/verify-official-snapshots.mjs</code> re-fetches all seven and
+          fails on any difference (nightly in CI). One of them is the situation
+          itself —
+          <a href="https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205740&amp;fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes"><code>timecode=20260830_205740</code></a
+          >: tied 4–4, bottom of the 11th, bases loaded (DeLuca, Simpson, Piper),
+          one out, Jorge Mateo batting — and the engine raises exactly one alert on
+          it. One pitch earlier,
+          <a href="https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205700&amp;fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes"><code>timecode=20260830_205700</code></a
+          >, the bases are loaded too, but the Rays trail 3–4 and the engine stays
+          silent: bases loaded on its own is not the situation. The walk-off that
+          ended it ~40 seconds later is captured as well
+          (<a href="https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205820&amp;fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes"><code>timecode=20260830_205820</code></a
+          >, Rays 5–4). <code>tools/official-snapshot-test.mjs</code> replays all
+          seven payloads through
+          <code>snapshotGame → evaluate → observe → diffStream</code> with no
+          network at all.
+        </p>
       </section>
 
       <section class="doc-section">
@@ -738,26 +763,42 @@
             visibly instead of guessing.
           </li>
           <li>
-            <strong>Live end-to-end proof is still pending.</strong> The rule
-            engine is covered by 11,806 deterministic checks, the monitor by 101,
-            the chat-style feed by 152, the strip by 160, the always-on watcher by
-            173, its deployment recipes by 112, the Web Push implementation by 130
-            (the RFC 8291 and RFC 8292 test vectors, intermediate values included),
-            the phone-alerts panel by 74 and the static site by 395 checks (counts
-            as of 2026-09-30, session 2), and the
+            <strong
+              >Live end-to-end proof — detection is proven on real data; the
+              unattended watch is not.</strong
+            >
+            The rule engine is covered by 11,806 deterministic checks, the monitor
+            by 101, the chat-style feed by 152, the strip by 160, the always-on
+            watcher by 173, its deployment recipes by 112, the Web Push
+            implementation by 130 (the RFC 8291 and RFC 8292 test vectors,
+            intermediate values included), the phone-alerts panel by 74, the static site by
+            402 checks, the real official snapshots by 116
+            official-snapshot checks (counts as of 2026-09-30, session 3), and the
             published copy of this site is verified by
-            <code>tools/deployed-site-test.mjs</code> on every merge and
-            nightly — but the honest next acceptance test is a real tied game
-            entering the bottom of the 9th with the bases loaded, observed end to
-            end, and carried all the way to a real phone notification.
+            <code>tools/deployed-site-test.mjs</code> on every merge and nightly.
+            The engine has now also been driven by <em>real official payloads</em>:
+            on 2026-08-30 the Padres and Rays were tied 4–4 with the bases loaded
+            in the bottom of the 11th, and the engine raises exactly one alert on
+            that captured snapshot while staying silent on the bases-loaded
+            snapshot one pitch earlier, when the game was not tied (§4). What
+            remains unproven is the <em>unattended</em> path: no page or watcher
+            has yet been sitting on a live qualifying game as it happened, and no
+            alert has yet arrived on a real phone through a real push service —
+            the next live tied bottom-9+ game is still the acceptance test.
           </li>
           <li>
-            <strong>Development-sandbox network limit (flagged, open).</strong>
-            The sandbox used for this session cannot reach
-            <code>statsapi.mlb.com</code> (TLS egress is blocked), so the API
-            projections listed in §4 are carried forward from the last verified
-            session and must be re-confirmed from a networked machine or the CI
-            smoke workflow.
+            <strong>Development-sandbox network limit (flagged, partially closed).</strong>
+            Raw socket egress from this sandbox is still blocked
+            (<code>curl</code>/<code>node fetch</code> to <code>statsapi.mlb.com</code>
+            end in <code>SSL_ERROR_SYSCALL</code>, HTTP 000), so the watcher, the
+            live smoke suite and
+            <code>tools/verify-official-snapshots.mjs</code> cannot run here — CI
+            runs them where the network is open. The session's page-fetch path
+            <em>does</em> reach the official API, and session 3 used it to capture
+            the seven real payloads behind §4 (including the StatsAPI's
+            <code>timecode</code> replay of a past game), so the projections are
+            re-confirmed rather than carried forward. No claim on this page rests
+            on a response that was not fetched from the official API.
           </li>
           <li>
             <strong>Recommended next work:</strong> (1) <em>prove it live</em> —
@@ -776,6 +817,60 @@
           </li>
         </ul>
         <div class="doc-sub">
+          <h3>
+            Verification log — 2026-09-30 (session 3: the real official snapshot,
+            positive and negative)
+          </h3>
+          <ul class="doc-list">
+            <li>
+              <span class="doc-badge ok">Verified</span>
+              <strong
+                >A real instance of the tracked situation, captured from the
+                official API.</strong
+              >
+              Padres @ Rays, 2026-08-30, gamePk 822933: the official feed shows
+              <em>tied 4–4, bases loaded, bottom of the 11th, one out, Jorge Mateo
+              batting</em> at
+              <a href="https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205740&amp;fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes"><code>timecode=20260830_205740</code></a
+              >, and the walk-off that ended it ~40 seconds later at
+              <a href="https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205820&amp;fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes"><code>timecode=20260830_205820</code></a> (Rays
+              5–4). The engine raises exactly one alert on that snapshot — tied
+              score, all three bases occupied, bottom 9+, fewer than three outs.
+              Re-fetched from the live API again during this session (same
+              <code>timecode</code> URL, same projection) it matched field for
+              field: inning 11, <code>Bottom</code>, 4–4, one out, 0-1 count,
+              DeLuca/Simpson/Piper on the bases, Mateo batting.
+            </li>
+            <li>
+              <span class="doc-badge ok">Verified</span>
+              <strong
+                >The false-positive control, from the same half-inning.</strong
+              >
+              One pitch earlier
+              (<a href="https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205700&amp;fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes"><code>timecode=20260830_205700</code></a
+              >) the bases are loaded and the Rays are behind 3–4: the engine stays
+              silent, because bases loaded on its own is not what this system
+              tracks. Both states are pinned in
+              <code>tools/fixtures/official-snapshots-822933.json</code> with the
+              exact URL behind each one, and
+              <code>tools/official-snapshot-test.mjs</code> replays all seven
+              captures through <code>snapshotGame → evaluate → observe →
+              diffStream</code> offline (116 official-snapshot checks); the nightly
+              CI job re-fetches every URL and fails on drift.
+            </li>
+            <li>
+              <span class="doc-badge warn">Flagged</span>
+              <strong>Two official-feed quirks, recorded rather than papered over.</strong>
+              (1) <code>inningState</code> reports <code>End</code> — not only
+              <code>Middle</code> — between halves; the captured payloads pin that
+              the engine treats such a tied game as <em>held</em>, not
+              <em>watching</em>. (2) The 20:57:00Z snapshot lists the batter
+              (DeLuca) as also occupying first base, a mid-play transitional
+              artifact of the feed. The engine does not react to it (the game was
+              not tied then), and no code was changed to "fix" a payload we do not
+              control — the same rule as every other irregularity on this project.
+            </li>
+          </ul>
           <h3>Verification log — 2026-09-30 (session 2: held watches, tabs, strip)</h3>
           <ul class="doc-list">
             <li>

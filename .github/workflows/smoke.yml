@@ -36,6 +36,9 @@ jobs:
       - name: Validate the chat-style feed controller (alerts.html)
         run: node tools/chat-feed-test.mjs
 
+      - name: Validate the rules engine against real official snapshots
+        run: node tools/official-snapshot-test.mjs
+
       - name: Validate the always-on watcher (same rules, no browser)
         run: node tools/watcher-test.mjs
 
@@ -120,3 +123,6 @@ jobs:
 
       - name: Run smoke test against live MLB StatsAPI
         run: node tools/smoke-test.mjs
+
+      - name: Re-verify the captured official snapshots against the live API
+        run: node tools/verify-official-snapshots.mjs

@@ -381,6 +381,8 @@ for (const suite of [
   "tools/bases-loaded-test.mjs",
   "tools/bases-loaded-monitor-test.mjs",
   "tools/bases-loaded-strip-test.mjs",
+  "tools/chat-feed-test.mjs",
+  "tools/official-snapshot-test.mjs",
   "tools/watcher-test.mjs",
   "tools/watcher-deploy-test.mjs",
   "tools/site-links-test.mjs",
@@ -389,6 +391,10 @@ for (const suite of [
 ok(
   smokeWorkflow.includes("tools/deployed-site-test.mjs"),
   "CI checks the published site after a merge to main and nightly",
+);
+ok(
+  smokeWorkflow.includes("tools/verify-official-snapshots.mjs"),
+  "The nightly live job re-fetches the captured official snapshots and fails on drift",
 );
 ok(
   /github\.ref == 'refs\/heads\/main'/.test(smokeWorkflow),
@@ -590,6 +596,29 @@ check(
 // The same rule applies to the other suites by name: a page that says "the
 // watcher suite is 85 checks" in one place and 120 in another is quoting two
 // "official" numbers, which is exactly how a reader stops trusting the page.
+// The real-data capture keeps one size everywhere it is quoted. A page that
+// says "116 official-snapshot checks" in one place and something else in
+// another is quoting two official numbers, which is how a reader stops
+// trusting the page.
+{
+  const quoted = [];
+  for (const [file, pattern] of [
+    ["README.md", /([\d,]+) official-snapshot checks/g],
+    ["verification.html", /([\d,]+)\s+official-snapshot checks/g],
+  ])
+    for (const match of read(file).matchAll(pattern))
+      quoted.push({ file, value: Number(match[1].replace(/,/g, "")) });
+  ok(
+    quoted.length >= 2,
+    `The real-data suite is sized where expected (${quoted.map((q) => `${q.file}:${q.value}`).join(", ")})`,
+  );
+  check(
+    new Set(quoted.map((entry) => entry.value)).size,
+    1,
+    `The real-data suite size agrees everywhere (${quoted.map((entry) => `${entry.file}:${entry.value}`).join(", ")})`,
+  );
+}
+
 {
   // Every place the sources page sizes the watcher suite — "…— 120 checks" and
   // "…(120 checks)" — pooled, then compared to each other.
