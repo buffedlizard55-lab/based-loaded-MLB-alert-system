@@ -192,6 +192,25 @@ async function assess(state) {
       flat(alerts.body).includes("bases-loaded-feed.css"),
     `alerts.html (chat-style feed) is published with its feed container, script and stylesheet (${alerts.status})`,
   );
+  ok(
+    flat(alerts.body).includes('id="active-strip"') &&
+      flat(alerts.body).includes('id="feed-tabs"') &&
+      flat(alerts.body).includes('id="stat-held"') &&
+      flat(alerts.body).includes('<nav id="feed-tabs" class="tabs'),
+    `alerts.html is published with the live-now strip, the category tabs and the held counter (${alerts.status})`,
+  );
+  const feedCss = await get("assets/css/bases-loaded-feed.css");
+  ok(
+    feedCss.status === 200 &&
+      /bl-strip-(?:watch|held|paused)/.test(feedCss.body) &&
+      /\.bl-tabs/.test(feedCss.body),
+    `the published chat stylesheet carries the strip variants and the tab layout (${feedCss.status})`,
+  );
+  const feedJs = await get("assets/js/bases-loaded-feed.js");
+  ok(
+    feedJs.status === 200 && /watch_held/.test(feedJs.body),
+    `the published chat controller narrates the held state (${feedJs.status})`,
+  );
 
   const verification = await get("verification.html");
   ok(verification.status === 200, `the sources page is published (${verification.status})`);

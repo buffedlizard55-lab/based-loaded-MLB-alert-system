@@ -755,8 +755,14 @@
     if (highlightPk && now > highlightUntil) highlightPk = null;
 
     $("games-count").textContent = discoveryAt || demo ? games.size : "—";
+    // The watch window holds EVERY game the page is tracking: loaded, batting
+    // right now, and late ties whose play is stopped (they are rendered in the
+    // On-watch list below as "PAUSED · WATCH HELD"). Counting only the first
+    // two made the tile read 0 above a list that was showing a held game.
     $("watch-count").textContent =
-      discoveryAt || demo ? current.length + watching.length : "—";
+      discoveryAt || demo
+        ? current.length + watching.length + pausedLate.length
+        : "—";
     $("active-count").textContent = discoveryAt || demo ? current.length : "—";
     $("tied-count").textContent =
       discoveryAt || demo

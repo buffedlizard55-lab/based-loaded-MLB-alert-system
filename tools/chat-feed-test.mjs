@@ -45,6 +45,8 @@ const ok = (value, label) => check(Boolean(value), true, label);
 
 const FEED_IDS = [
   "feed-list",
+  "feed-tabs",
+  "active-strip",
   "status-line",
   "banner",
   "countdown",
@@ -54,6 +56,7 @@ const FEED_IDS = [
   "refresh-btn",
   "stat-active",
   "stat-watch",
+  "stat-held",
   "stat-today",
   "stat-walkoffs",
   "stat-events",
@@ -404,6 +407,7 @@ function boot({
   // Count real card-list rebuilds: wrap the innerHTML setter on #feed-list so
   // a "the DOM did not churn" assertion can see identical-string rebuilds too.
   let feedWrites = 0;
+  let stripWrites = 0;
   {
     const fl = el("feed-list");
     const desc = Object.getOwnPropertyDescriptor(fl, "innerHTML");
@@ -412,6 +416,15 @@ function boot({
       set(value) {
         feedWrites++;
         desc.set.call(this, value);
+      },
+    });
+    const strip = el("active-strip");
+    const stripDesc = Object.getOwnPropertyDescriptor(strip, "innerHTML");
+    Object.defineProperty(strip, "innerHTML", {
+      get: stripDesc.get,
+      set(value) {
+        stripWrites++;
+        stripDesc.set.call(this, value);
       },
     });
   }
@@ -425,6 +438,14 @@ function boot({
     feedList: () => el("feed-list"),
     feedText: () => el("feed-list").innerHTML,
     feedWrites: () => feedWrites,
+    stripText: () => el("active-strip").innerHTML,
+    stripWrites: () => stripWrites,
+    tabButtons: () => el("feed-tabs").children,
+    tabLabels: () => el("feed-tabs").children.map((b) => b.textContent),
+    async clickTab(index) {
+      el("feed-tabs").children[index].fire("click");
+      await settle();
+    },
     statusLine: () => el("status-line").textContent,
     savedFeed: () => JSON.parse(storage.get(STORE_KEY) || `{"feed":[]}`).feed,
     nextDelay: () => [...timeouts.values()].map((entry) => entry.ms),
@@ -815,6 +836,287 @@ const kinds = (env) => env.savedFeed().map((event) => event.kind);
     env.savedFeed().some((e) => e.kind === "walkoff_rbi"),
     "The guided demo ends in a walk-off",
   );
+}
+
+/* ==========================================================================
+ * 10. Held watch: a tied game whose home team is not batting is TRACKED, not
+ *     "over" — and the hold is narrated once, then never repeated
+ * ======================================================================== */
+
+{
+  const env = boot();
+  // The page opens in the TOP of the 9th of a tied game: the home team has not
+  // batted yet, so the situation is being tracked but is not live.
+  env.setSnapshot(snapshot(linescore({ state: "Top" })));
+  await env.start();
+  check(kinds(env), ["watch_held"], "Opening in the top half of a tied 9th narrates a held watch");
+  ok(env.feedText().includes("WATCH HELD"), "The held card is visible");
+  ok(
+    env.feedText().includes("Still tied in the top of the 9th"),
+    "The held card says exactly why: the home team still has to bat",
+  );
+  ok(
+    !env.feedText().includes("WATCH OVER"),
+    "A held watch is never narrated as over while the game is still tied",
+  );
+  check(env.el("stat-held").textContent, "1", "The held counter shows the tracked game");
+  check(env.el("stat-watch").textContent, "0", "…and it is not counted as batting right now");
+
+  // Still in the top half: one card per hold, not one per poll.
+  env.setSnapshot(snapshot(linescore({ state: "Top", outs: 1 })));
+  await env.advance(2000);
+  await env.tick();
+  check(
+    kinds(env).filter((k) => k === "watch_held").length,
+    1,
+    "A hold is narrated once, not once per poll",
+  );
+
+  // Home half starts: the watch opens.
+  env.setSnapshot(snapshot(linescore({ state: "Middle", outs: 3 })));
+  await env.advance(2000);
+  await env.tick();
+  check(kinds(env)[0], "watch_begins", "The home half opens the watch");
+  check(env.el("stat-held").textContent, "0", "The held counter clears when the home team bats");
+
+  // Third out with the game still tied: held again, never "over".
+  env.setSnapshot(snapshot(linescore({ state: "Bottom", outs: 3 })));
+  await env.advance(2000);
+  await env.tick();
+  check(kinds(env)[0], "watch_held", "A tied, scoreless home half holds the watch");
+  ok(
+    env.feedText().includes("Still tied after the home half of the 9th"),
+    "The hold after a completed home half says so",
+  );
+  check(env.el("stat-held").textContent, "1", "…and the hold counter picks it up");
+
+  // Top 10, still tied: no new card (the hold is already narrated).
+  env.setSnapshot(snapshot(linescore({ inning: 10, state: "Top" })));
+  await env.advance(2000);
+  await env.tick();
+  check(kinds(env)[0], "watch_held", "Moving into the top of the 10th still tied emits nothing new");
+
+  // The away team scores in the top 10: the tie is gone, so the watch really is over.
+  env.setSnapshot(
+    snapshot(linescore({ inning: 10, state: "Top", outs: 1, away: 4, home: 3 })),
+  );
+  await env.advance(2000);
+  await env.tick();
+  check(kinds(env)[0], "watch_ends", "Breaking the tie ends the watch");
+  ok(
+    env.feedText().includes("no longer tied"),
+    "The end of the watch names the real reason instead of a vague message",
+  );
+
+  // A reload mid-hold must not repeat the held card (the state is persisted).
+  const storage = new Map();
+  const env3 = boot({ storage });
+  env3.setSnapshot(snapshot(linescore({ state: "Top" })));
+  await env3.start();
+  check(
+    env3.savedFeed().filter((e) => e.kind === "watch_held").length,
+    1,
+    "The first page narrates the hold once",
+  );
+  const env4 = boot({ storage });
+  env4.setSnapshot(snapshot(linescore({ state: "Top", outs: 2 })));
+  await env4.start();
+  check(
+    env4.savedFeed().filter((e) => e.kind === "watch_held").length,
+    1,
+    "A page reload during a hold does not repeat the held card",
+  );
+}
+
+/* ==========================================================================
+ * 11. Category tabs — the replay feed's pills, counting and filtering THIS
+ *     feed, without ever touching the alert pipeline
+ * ======================================================================== */
+
+{
+  const env = boot();
+  env.setSnapshot(snapshot(linescore({ state: "Middle" })));
+  await env.start();
+  env.setSnapshot(snapshot(linescore({ first: runner(1, "R1"), second: runner(2, "R2"), third: runner(3, "R3") })));
+  await env.advance(2000);
+  await env.tick();
+  env.setSnapshot(snapshot(linescore({ first: runner(1, "R1"), second: runner(2, "R2"), third: runner(3, "R3") })));
+  await env.advance(2000);
+  await env.tick();
+
+  check(env.tabButtons().length, 5, "Five category tabs, exactly like the replay feed's pattern");
+  check(
+    env.tabLabels().map((label) => label.replace(/\s\(\d+\)$/, "")),
+    ["All", "⚾ Bases Loaded", "👀 On Watch", "🎉 Walk-offs", "⚠️ Warnings"],
+    "The tabs name this feed's categories",
+  );
+  const counts = env.tabLabels().map((label) => Number(label.match(/\((\d+)\)$/)[1]));
+  check(counts[0], env.savedFeed().length, "The All tab counts every event");
+  check(
+    counts[1] + counts[2] + counts[3] + counts[4],
+    counts[0],
+    "Every event belongs to exactly one category tab (no orphans, no double counting)",
+  );
+  check(
+    counts[1],
+    1,
+    "The Bases Loaded tab counts the alert",
+  );
+  check(
+    env.tabButtons()[0].className,
+    "tab tab-on",
+    "The All tab starts active with the replay feed's tab-on class",
+  );
+
+  // Filter to the walk-off tab: the cards change, the alerts do not.
+  const savedBefore = env.savedFeed().length;
+  await env.clickTab(3);
+  check(
+    env.tabButtons()[3].className,
+    "tab tab-on",
+    "Clicking a tab moves the active pill",
+  );
+  check(env.tabButtons()[0].className, "tab", "…and clears it from the others");
+  ok(
+    !env.feedText().includes("⚾ BASES LOADED"),
+    "The Walk-offs tab hides the bases-loaded cards",
+  );
+  check(env.savedFeed().length, savedBefore, "Filtering the view never drops a recorded event");
+
+  // Back to All: everything returns.
+  await env.clickTab(0);
+  ok(env.feedText().includes("⚾ BASES LOADED"), "The All tab shows the alert again");
+
+  // A new alert while a category is selected is still recorded and still chimes.
+  await env.clickTab(4);
+  env.setSnapshot(snapshot(linescore({ outs: 1 })));
+  await env.advance(2000);
+  await env.tick();
+  env.setSnapshot(snapshot(linescore({ outs: 2, first: runner(4, "R4"), second: runner(5, "R5"), third: runner(6, "R6") })));
+  await env.advance(2000);
+  await env.tick();
+  check(
+    env.savedFeed().filter((e) => e.kind === "bases_loaded").length,
+    2,
+    "A new alert lands in the history even while another tab is selected",
+  );
+  check(
+    counts.length && env.tabLabels()[1].includes("(2)"),
+    true,
+    "The Bases Loaded tab count updates live",
+  );
+  ok(
+    !env.feedText().includes("⚾ BASES LOADED"),
+    "…while the selected Warnings tab stays filtered",
+  );
+
+  // Idle ticks rebuild nothing: not the cards, not the strip, not the tabs.
+  await env.clickTab(0);
+  const frozenFeed = env.feedText();
+  const frozenStrip = env.stripText();
+  const frozenTabs = env.tabButtons().length;
+  const writes = [env.feedWrites(), env.stripWrites()];
+  env.advance(1000);
+  env.runInterval();
+  env.advance(1000);
+  env.runInterval();
+  check(env.feedText(), frozenFeed, "The heartbeat leaves the cards untouched");
+  check(env.stripText(), frozenStrip, "The heartbeat leaves the live strip untouched");
+  check(env.tabButtons().length, frozenTabs, "The heartbeat leaves the tabs untouched");
+  check([env.feedWrites(), env.stripWrites()], writes, "…with zero rebuilds while idle");
+}
+
+/* ==========================================================================
+ * 12. The live-now strip: loaded, on watch, held — the replay feed's strip
+ *     component carrying this feed's situations
+ * ======================================================================== */
+
+{
+  const env = boot();
+  // A late game that is not tied is polled and listed in the slate, but it is
+  // not a situation: the strip must stay empty rather than invent a row.
+  env.setSnapshot(snapshot(linescore({ state: "Top", away: 5, home: 3 })));
+  await env.start();
+  check(env.stripText(), "", "Nothing qualifies: the strip renders nothing at all");
+  check(env.el("stat-held").textContent, "0", "…and nothing is counted as held");
+
+  env.setSnapshot(snapshot(linescore({ first: runner(1, "R1") })));
+  await env.advance(2000);
+  await env.tick();
+  ok(env.stripText().includes("👀 ON WATCH"), "A tied game in the bottom half shows on the strip");
+  ok(env.stripText().includes("2 to fill"), "…with how many runners are still needed");
+  ok(
+    env.stripText().includes("game.html?gamePk=" + GAME_PK),
+    "Each strip row links to the same game page the cards use",
+  );
+  ok(
+    env.stripText().includes("feed-active-link") && env.stripText().includes("feed-active-badge"),
+    "The strip reuses the replay feed's own strip classes",
+  );
+
+  env.setSnapshot(
+    snapshot(linescore({ outs: 1, first: runner(1, "R1"), second: runner(2, "R2"), third: runner(3, "R3") })),
+  );
+  await env.advance(2000);
+  await env.tick();
+  ok(env.stripText().includes("🚨 BASES LOADED"), "A loaded situation takes over the strip");
+  ok(env.stripText().includes("WALK-OFF POSSIBLE"), "…and is labelled as the walk-off situation");
+  ok(env.stripText().includes("1 out"), "…with the official outs");
+
+  env.setSnapshot(snapshot(linescore({ inning: 10, state: "Top" })));
+  await env.advance(2000);
+  await env.tick();
+  ok(env.stripText().includes("⏳ WATCH HELD"), "A tied game between home halves shows as held");
+  ok(env.stripText().includes("home team still to bat"), "…with the honest reason");
+  ok(!env.stripText().includes("🚨 BASES LOADED"), "The loaded row is gone once the situation is");
+}
+
+/* ==========================================================================
+ * 13. A stopped game: a late tie in a delay is held and counted as such — an
+ *     early or untied delay is never allowed to inflate a counter
+ * ======================================================================== */
+
+{
+  const env = boot();
+  const delayed = { abstractGameState: "Live", detailedState: "Delayed" };
+  env.setSnapshot(snapshot(linescore({ inning: 10, state: "Bottom" }), delayed));
+  await env.start();
+  check(env.state.oscillators, 0, "A paused game never chimes");
+  check(env.el("stat-watch").textContent, "0", "A paused game is not counted as batting now");
+  check(env.el("stat-held").textContent, "1", "…it is counted as a held watch");
+  ok(
+    env.stripText().includes("⏸ PAUSED · WATCH HELD"),
+    "The strip shows the stopped game as a held watch",
+  );
+  ok(
+    !env.stripText().includes("🚨 BASES LOADED"),
+    "A stopped game is never presented as a loaded situation",
+  );
+  ok(
+    env.savedFeed().every((e) => e.kind !== "bases_loaded"),
+    "…and never produces an alert card from a snapshot that did not arrive",
+  );
+  check(
+    env.savedFeed().filter((e) => e.kind === "watch_held").length,
+    0,
+    "A stopped game is never narrated as a held watch card (the hold is already labelled)",
+  );
+
+  // A delayed game that is NOT tied is still polled (it is a late inning), and
+  // must not be counted anywhere.
+  const env2 = boot();
+  env2.setSnapshot(snapshot(linescore({ inning: 9, state: "Top", away: 5, home: 3 }), delayed));
+  await env2.start();
+  check(env2.el("stat-held").textContent, "0", "A late delay that is not tied is not a held watch");
+  check(env2.el("stat-watch").textContent, "0", "…and it is not on watch");
+  check(env2.stripText(), "", "…and the strip stays empty");
+
+  // A tie that is delayed in an EARLY inning is not this page's business.
+  const env3 = boot({ games: [scheduleGame({ inning: 3, state: "Bottom" })] });
+  env3.setSnapshot(snapshot(linescore({ inning: 3, state: "Bottom" }), delayed));
+  await env3.start();
+  check(env3.el("stat-held").textContent, "0", "A delayed early-inning tie is not a held watch");
+  check(env3.state.snapshotCalls.length, 0, "…and it is not even polled individually");
 }
 
 console.log(`✓ ${checks} chat-feed controller checks passed`);

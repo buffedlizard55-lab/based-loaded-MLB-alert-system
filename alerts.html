@@ -50,6 +50,8 @@
   </div>
 
   <main class="bl-main">
+    <section id="active-strip" class="active-strip-wrap" aria-live="polite"></section>
+
     <section class="bl-summary-bar">
       <div class="bl-stat bl-stat-loaded">
         <div class="bl-stat-label">Bases loaded now</div>
@@ -59,7 +61,12 @@
       <div class="bl-stat bl-stat-watch">
         <div class="bl-stat-label">On watch</div>
         <div class="bl-stat-value" id="stat-watch">—</div>
-        <div class="bl-stat-small">Tied · late · home still batting</div>
+        <div class="bl-stat-small">Tied · bottom half · home batting</div>
+      </div>
+      <div class="bl-stat bl-stat-held">
+        <div class="bl-stat-label">Watch held</div>
+        <div class="bl-stat-value" id="stat-held">—</div>
+        <div class="bl-stat-small">Tied · 9th+ · home still to bat or play paused</div>
       </div>
       <div class="bl-stat bl-stat-tension">
         <div class="bl-stat-label">Alerts today</div>
@@ -78,6 +85,8 @@
       </div>
     </section>
 
+    <nav id="feed-tabs" class="tabs bl-tabs" aria-label="Filter feed"></nav>
+
     <section id="feed-list" class="bl-feed-list" aria-live="polite"></section>
 
     <div id="status-line" class="status-line" aria-live="off"></div>
@@ -90,6 +99,14 @@
         situation — watch begins, runners reaching, the moment all three bases
         fill, tension rising, and the resolution (walk-off hit, third out,
         bases cleared, or extra innings). Nothing else triggers an alert.
+      </p>
+      <p>
+        A tied game whose home team is <em>not</em> batting is never dropped:
+        it is shown as a <strong>held</strong> watch on the strip and in the
+        counters, and the watch re-opens when the home half starts — so a delay,
+        a scoreless ninth or a top half cannot lose the situation. The tabs
+        above the feed only filter what you are reading; they never change what
+        is polled or alerted.
       </p>
       <p>
         Live data via the public MLB StatsAPI

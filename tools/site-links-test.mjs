@@ -208,6 +208,61 @@ check(
   "The push panel is the only reader of the device name, and it is only copied out",
 );
 
+/* --------------------- 6a. the chat feed's published surfaces are wired --- */
+
+// The chat feed (alerts.html) is the page the brief calls out by name ("should
+// look like the ABS challenge alert system and chat style live updating"). Its
+// three newest surfaces — the live-now strip, the category tabs and the held
+// counter — are pinned here so a page edit cannot quietly drop one.
+const chatHtml = read("alerts.html");
+const chatCss = read("assets/css/bases-loaded-feed.css");
+const chatJs = read("assets/js/bases-loaded-feed.js");
+for (const [id, what] of [
+  ["active-strip", "the live-now strip"],
+  ["feed-tabs", "the category tabs"],
+  ["stat-held", "the held-watch counter"],
+  ["stat-watch", "the on-watch counter"],
+  ["stat-active", "the loaded-now counter"],
+]) ok(chatHtml.includes(`id="${id}"`), `alerts.html carries ${what} (#${id})`);
+ok(
+  chatHtml.indexOf('id="active-strip"') < chatHtml.indexOf('id="feed-list"'),
+  "The live strip sits above the feed list, like the replay feed's own strip",
+);
+ok(
+  /<nav id="feed-tabs" class="tabs/.test(chatHtml),
+  "The tabs use the replay feed's own nav.tabs component",
+);
+for (const cls of [
+  "feed-active-strip",
+  "feed-active-badge",
+  "feed-active-link",
+  "feed-active-game",
+  "feed-active-type",
+  "feed-active-reason",
+  "feed-active-impact",
+]) {
+  ok(
+    read("assets/css/style.css").includes(`.${cls}`) && chatJs.includes(cls),
+    `The chat strip renders ${cls}, the replay feed's own strip class`,
+  );
+}
+for (const cls of ["bl-strip-watch", "bl-strip-held", "bl-strip-paused"]) {
+  ok(chatCss.includes(cls), `assets/css/bases-loaded-feed.css styles ${cls}`);
+}
+// The tabs come from the rules engine, so the page, the tests and any future
+// front end cannot drift apart on what a category means.
+ok(
+  read("assets/js/bases-loaded-core.js").includes("feedTabs") &&
+    chatJs.includes("rules.feedTabs") &&
+    chatJs.includes("rules.matchesTab"),
+  "The chat tabs are defined once, in the shared rules engine",
+);
+ok(
+  !/<input|<textarea|<form/i.test(chatHtml) &&
+    !/createElement\(\s*["'](?:input|textarea|form)/i.test(chatJs),
+  "The chat feed still takes no typed input at all (tabs are buttons, not fields)",
+);
+
 /* ------------------------------ 6b. phone alerts (Web Push) are wired up --- */
 
 const indexHtml = read("index.html");

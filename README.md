@@ -9,13 +9,16 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 
 - **Home (`index.html`) / `bases-loaded.html`:** the situation monitor — live slate, alert cards, on-watch list and alert history. No replay, challenge, scoring-change or hit-probability alerts run on this page.
 - **`alerts.html` — the chat-style live feed:** the same rules engine narrating every step along the way in a chat/ABS-challenge-style timeline — watch begins, runners reaching, bases loaded, tension rising, walk-off, bases clearing, delays and extra innings — so you can sit back and watch the situation build in real time without switching to the monitor. The visual language mirrors [POSTSEASONMLBALERTS / reviews.html](https://buffedlizard55-lab.github.io/POSTSEASONMLBALERTS/reviews.html), but the events are Loaded Late's: tied + bottom 9+ + bases loaded.
+- **Live-now strip on the chat feed:** the replay feed's own strip component (`feed-active-strip` / `-badge` / `-link`, straight from `style.css`) above the chat list, one row per game that is **loaded** (`🚨 BASES LOADED … WALK-OFF POSSIBLE`), **on watch** (`👀 ON WATCH … n to fill`), **held** (`⏳ WATCH HELD … home team still to bat`) or **stopped** (`⏸ PAUSED · WATCH HELD`). Nothing renders when nothing qualifies.
+- **Category tabs on the chat feed:** the replay feed's pill tabs (`All`, `⚾ Bases Loaded`, `👀 On Watch`, `🎉 Walk-offs`, `⚠️ Warnings`) with live counts, defined once in the rules engine. They are a **view filter only** — they never touch the polls, the rules or the alert pipeline — and `tools/bases-loaded-test.mjs` fails if any event kind stops belonging to exactly one tab.
 - **On watch:** begins at the tied changeover into bottom 9+ (including the third out at the top), or whenever a game becomes tied during a qualifying bottom half. There is no maximum inning.
+- **Held, never dropped:** a tied game in the 9th or later whose home team is **not batting** (top half, or between halves) is narrated as `WATCH HELD` — once, then silently tracked — counted in its own *Watch held* tile, and re-opened the moment the home half starts. It is only reported as over when the tie is actually gone. The monitor's slate says the same thing in its own words, so the two front ends cannot contradict each other.
 - **Route-independent:** reads official first/second/third base occupants, not event descriptions. Walks, hits, errors, interference, automatic extra-inning runners and official corrections all use the same rule.
 - **Alerts:** highlighted live cards, optional sound and opt-in desktop notifications. A continuous loaded situation alerts once; a confirmed exit and reload can alert again, even in the same inning.
 - **History:** immutable score, outs and runner snapshots, retained in this browser for seven days (maximum 200 entries). Refreshing the page restores history and deduplication state. Not shared across devices or a complete historical replay.
 - **Site-wide strip:** the scoreboard, replay feed (`reviews.html`) and game view mount a slim "Loaded Late" watcher, so the same one situation is tracked from whichever page of this copy you are on. The strip reuses the same rules engine, the same alert log and the same notification opt-in as the dashboard; a continuous situation never alerts twice just because you changed pages. The monitor page itself does not load it, so no page ever runs two watchers.
 - **Live slate (no manual checking):** the monitor also lists **every game on the slate** — score, half-inning, outs, and one line saying why it is or is not tracked (`BASES LOADED · ALERT`, `ON WATCH · 1st & 2nd · 1 to fill`, `TIED · TOP HALF · HOME STILL TO BAT`, `PAUSED · STILL TIED · WATCH HELD`, `NOT YET INNING 9`, …) plus the provenance and age of the numbers on that row (`live snapshot · 3s ago` or `official schedule scan`). Nothing on the page has to be worked out by hand.
-- **A delay cannot lose the situation:** a rain delay or suspension pauses play without proving the bases cleared, so the watch is **held** and labelled as paused instead of the game silently disappearing.
+- **A delay cannot lose the situation:** a rain delay or suspension pauses play without proving the bases cleared, so the watch is **held** and labelled as paused instead of the game silently disappearing. A stopped late tie is counted as a held watch on both front ends; an early or untied delay is counted nowhere.
 - **Verified, checkable claims:** [`verification.html`](verification.html) maps every requirement of the brief to where it is implemented and how to check it, lists every route to loaded bases with its rule number, and links the official sources for each claim.
 - **Original pages preserved:** `scoreboard.html`, `game.html`, and `reviews.html`. Their legacy features remain separate from this narrow monitor.
 
@@ -132,7 +135,7 @@ node tools/icons-test.mjs                # installability: manifest, icons, page
 node tools/deployed-site-test.mjs        # the published site itself (network)
 ```
 
-These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. `chat-feed-test.mjs` drives the chat-style feed (`alerts.html`) through the same deterministic DOM, clock and API stub: the full watch→build→loaded→tension→cleared→reload→walk-off story, extra innings, a failed-fetch outage that must never fabricate a verdict, the cross-page quiet window, a page reload that must not re-alert, and zero idle DOM rebuilds. `webpush-test.mjs` reproduces the published RFC 8291 and RFC 8292 vectors value by value
+These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. `chat-feed-test.mjs` drives the chat-style feed (`alerts.html`) through the same deterministic DOM, clock and API stub: the full watch→build→loaded→tension→cleared→reload→walk-off story, extra innings, held watches (top half, end of a home half, first sight, reload mid-hold, tie broken), the category tabs (counts, one-tab-per-kind partition, filtering that never drops an event), the live-now strip in all four states, a failed-fetch outage that must never fabricate a verdict, a late tie in a delay that must never be counted as a live alert, the cross-page quiet window, a page reload that must not re-alert, and zero idle DOM rebuilds for the cards, the strip and the tabs. `webpush-test.mjs` reproduces the published RFC 8291 and RFC 8292 vectors value by value
 (including the intermediate HKDF steps) and decrypts the RFC's message with an independently
 written receiver; `push-alerts-test.mjs` drives every branch of the subscribe panel — including
 a refused permission prompt, a subscribe that throws, and a clipboard that refuses to copy.
@@ -234,10 +237,10 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 5. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
-6. **Live end-to-end proof still pending.** Deterministic suites cover 11,772 rule states
-   plus 99 monitor, 90 chat-feed, 160 strip, 173 watcher, 112 deployment, 130 Web Push,
-   74 phone-alert, 153 installability and 375 site checks, and a published-site check
-   verifies the deployment itself (counts as of 2026-09-30), but a live qualifying game
+6. **Live end-to-end proof still pending.** Deterministic suites cover 11,806 rule states
+   plus 101 monitor, 152 chat-feed, 160 strip, 173 watcher, 112 deployment, 130 Web Push,
+   74 phone-alert, 153 installability and 395 site checks, and a published-site check
+   verifies the deployment itself (counts as of 2026-09-30, session 2), but a live qualifying game
    has not yet been observed end-to-end from this deployment, and no alert has yet arrived
    on a real phone through a real push service — the next live tied bottom-9+ game is the
    real acceptance test.
@@ -305,6 +308,12 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    team's next three, so reading the defensive copy would name the wrong lineup. The
    projection already requested `inHole`, so nothing new was added to the request; the
    suite now pins that a defensive `inHole` can never appear as due up.
+   **Re-verified live on 2026-09-30** — the same projection against game 823001 showed
+   that `linescore.defense` also carries the fielding team's **first/second/third
+   basemen**, populated on every pitch, so reading occupancy from the defensive side
+   would report "bases loaded" for every game. `evaluate()` reads occupancy and due-up
+   from `linescore.offense` only, and `tools/bases-loaded-test.mjs` now carries a
+   defensive-side fixture that must never count as a base or a runner.
 5. ~~History export (CSV/JSON) and a shareable per-alert link.~~ **Shipped this session**:
    *Export JSON*, *Export CSV* and *Copy newest evidence line* on the monitor, each record
    carrying the exact official snapshot URL it was read from, plus an *Official snapshot*
@@ -336,20 +345,103 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    decision about *this* request (400/401/403/404/410/413) are reported once and not
    retried. All of it is covered by `tools/watcher-test.mjs` with an injected clock.
 8. ~~Browser-grade Web Push.~~ **Shipped this session** — see the session log below.
-9. ~~Chat-style live feed (the "ABS challenge" look for bases loaded).~~ **Shipped this
-   session**: `alerts.html` is a chat-style live timeline (mirroring the visual language
-   of the POSTSEASONMLBALERTS / MLB-Live-PBP ABS-challenge feed) that narrates every
-   step toward a tied, bases-loaded, bottom-9+ walk-off — watch begins, runners
-   reaching, bases loading, tension rising, walk-off / bases clear / extra innings /
-   delays — color-coded by event kind, newest first, with new-item flash and a
-   `?demo=1` guided walk-off scenario. `BasesLoadedRules.diffStream()` in
+9. ~~Chat-style live feed (the "ABS challenge" look for bases loaded).~~ **Shipped
+   2026-09-29, finished 2026-09-30**: `alerts.html` is a chat-style live timeline
+   (mirroring the visual language of the POSTSEASONMLBALERTS / MLB-Live-PBP
+   ABS-challenge feed) that narrates every step toward a tied, bases-loaded, bottom-9+
+   walk-off — watch begins, **watch held**, runners reaching, bases loading, tension
+   rising, walk-off / bases clear / extra innings / delays — color-coded by event kind,
+   newest first, with new-item flash, the replay feed's **live-now strip** and
+   **category tabs**, and a `?demo=1` guided walk-off scenario. `BasesLoadedRules.diffStream()` in
    `assets/js/bases-loaded-core.js` is the pure event emitter (existing `observe()`
    contract unchanged; monitor behavior untouched). **Hardened and test-covered on
    2026-09-30** — see that session log. Still open for a future pass:
    (a) richer micro-events (batter changes, pitch-by-pitch tension micro-updates,
-   `tension_relief` after a foul/ball), (b) a date-picker on the chat (currently
-   "today + yesterday carryovers", same as the monitor), (c) wiring server-side watcher
-   pushes through the service worker so a chat entry appears while the tab is closed.
+   `tension_relief` after a foul/ball), (b) replaying a past day on the chat — a date
+   picker is deliberately *not* the answer, because every alert page is asserted to
+   take no typed input and there is no stored feed to replay (the alerts themselves
+   are exportable instead), (c) wiring server-side watcher pushes through the service
+   worker so a chat entry appears while the tab is closed, (d) the chat strip and
+   tabs are covered by the deterministic DOM stub and the published-site byte check,
+   but no screenshot test exists in this repository, so the pixels themselves are
+   reviewed by eye on a real screen rather than asserted.
+
+## Session log — 2026-09-30 (session 2: held watches, tabs and the live strip)
+
+Read the brief line by line again first. This session's target was the sentence the
+last one left half-done — *"the alert system, the notification, everything should be
+exactly like that"* — and the review found that the chat feed was still missing two
+pieces of the replay feed it claims to mirror (the **live-now strip** and the
+**category tabs**), plus a real disagreement with the monitor about games that are
+still tied but not currently batting.
+
+**Bugs found by line-by-line review and fixed**
+
+- **The chat feed called a tied game "over".** When a tied game finished its home half
+  (or was in the *top* of an extra inning), `diffStream()` emitted `watch_ends` with
+  *"No longer in a qualifying situation."* — while the monitor's slate, on the same
+  poll, said `TIED · TOP HALF · HOME STILL TO BAT` / `TIED · HOME HALF OVER · WATCH
+  CONTINUES`. The two front ends contradicted each other, which the feed's own header
+  comment forbids. There is now a **`watch_held`** event kind: the game is still tied
+  and still in the 9th or later, the home team simply is not batting this half; the
+  watch re-opens in the next bottom half. It fires once per hold (including the first
+  sight of such a game — the brief's *"begin tracking when there is a tie game going
+  to the bottom of the 9th or later"*), survives a page reload through the persisted
+  stream state, and a delay is still narrated as a pause, never as a hold.
+- **A hold that never ended.** With `watch_ends` no longer firing for held games, a
+  game whose tie was broken in the top half (the away team scores) would have gone
+  silent while the feed's last word was "watch held". `diffStream()` now tracks `held`
+  in its state and reports `watch_ends` — *"The game is no longer tied — the walk-off
+  watch is over."* — when a hold ends without the home team batting again.
+- **The chat's "On watch" tile counted the wrong games.** It added *every* paused game
+  to the on-watch count, including a rain delay in the 3rd inning of a game that was
+  not tied — a number the rest of the page could not explain. Paused games are now
+  filtered the same way the monitor filters them (tied, 9th or later), and they count
+  as **held**, not as batting.
+- **The monitor's watch-window tile contradicted its own list.** A delayed tied game in
+  the 10th was rendered in the On-watch list as `PAUSED · STILL TIED · WATCH HELD` while
+  the `IN THE WATCH WINDOW` tile above it read **0**. The tile now counts the held game
+  it is displaying (`tools/bases-loaded-monitor-test.mjs` pins it).
+
+**Parity with the replay feed, finished**
+
+- **Live-now strip** (`#active-strip`): the replay feed's own `.feed-active-strip` /
+  `-badge` / `-link` / `-game` / `-type` / `-reason` / `-impact` components, carrying
+  `🚨 BASES LOADED … WALK-OFF POSSIBLE`, `👀 ON WATCH … n to fill`, `⏳ WATCH HELD … home
+  team still to bat` and `⏸ PAUSED · WATCH HELD` rows, each linking to the game page.
+- **Category tabs** (`#feed-tabs`, `<nav class="tabs">` — the replay feed's markup):
+  `All`, `⚾ Bases Loaded`, `👀 On Watch`, `🎉 Walk-offs`, `⚠️ Warnings`, with live counts
+  and `tab-on` on the active pill. The categories live in the rules engine
+  (`BasesLoadedRules.feedTabs` / `matchesTab`), so the page and the tests share one
+  definition, and a test asserts the tabs **partition every event kind exactly once**.
+  Filtering is view-only: a new alert while another tab is selected is still recorded,
+  still chimes and still notifies.
+- **`Watch held` tile** on the chat summary bar, so "still tied, home team not batting"
+  (and a stopped late tie) is visible without reading cards.
+- Rendering stayed signature-driven: the tabs and the strip rebuild only when their
+  contents change, so the one-second heartbeat still touches nothing (asserted).
+
+**Suite growth (all offline, no dependencies)**
+
+- `tools/chat-feed-test.mjs` 90 → 152 checks: held-watch narration (top half, end of a
+  home half, first sight, reload mid-hold, tie broken), tab rendering/counts/partition/
+  filtering, the strip in all four states, zero idle rebuilds for the cards, the strip
+  *and* the tabs, and the paused/early-delay cases that must stay empty.
+- `tools/bases-loaded-test.mjs` now pins the pure narration too (`diffStream()` had no
+  direct coverage before): the episode matrix, the hold/watch distinction, and the
+  tab partition (11,772 → 11,806 checks).
+- `tools/bases-loaded-monitor-test.mjs` 99 → 101: the watch-window tile now has to
+  count the held game the list shows, without counting it as a live alert.
+- `tools/site-links-test.mjs` 375 → 395: the chat page's published surfaces (strip,
+  tabs, held counter), the shared strip classes, and that the tabs are defined once in
+  the rules engine.
+- `tools/deployed-site-test.mjs` now also checks that the published `alerts.html`,
+  `assets/css/bases-loaded-feed.css` and `assets/js/bases-loaded-feed.js` really carry
+  the strip, the tabs, the held counter and the held narration.
+- Mutation probes run this session (each one reverted afterwards): removing the
+  `watch_held` branch, letting a paused game count as held, making the tab filter match
+  everything, dropping the paused strip row, dropping the held counter, and reverting
+  the monitor's watch-window tile — **all six are caught** by the suites above.
 
 ## Session log — 2026-09-30 (chat feed hardened + covered by its own suite)
 
