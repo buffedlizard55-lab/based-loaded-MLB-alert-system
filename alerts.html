@@ -90,45 +90,45 @@
     <section id="feed-list" class="bl-feed-list" aria-live="polite"></section>
 
     <div id="status-line" class="status-line" aria-live="off"></div>
-
-    <footer class="site-footer" style="margin-top:28px; max-width:980px; margin-left:auto; margin-right:auto;">
-      <p>
-        <strong>One situation. Every game.</strong> This feed tracks
-        <em>only</em> games that are tied in the bottom of the 9th inning or
-        later, and narrates every step toward a walk-off bases-loaded
-        situation — watch begins, runners reaching, the moment all three bases
-        fill, tension rising, and the resolution (walk-off hit, third out,
-        bases cleared, or extra innings). Nothing else triggers an alert.
-      </p>
-      <p>
-        A tied game whose home team is <em>not</em> batting is never dropped:
-        it is shown as a <strong>held</strong> watch on the strip and in the
-        counters, and the watch re-opens when the home half starts — so a delay,
-        a scoreless ninth or a top half cannot lose the situation. The tabs
-        above the feed only filter what you are reading; they never change what
-        is polled or alerted.
-      </p>
-      <p>
-        Live data via the public MLB StatsAPI
-        (<a href="https://statsapi.mlb.com" target="_blank" rel="noopener">statsapi.mlb.com</a>).
-        We read official runner occupancy on first, second and third — we do
-        not guess from play text. Walks, hits, errors, catcher/fielder
-        interference, automatic extra-inning runners, and official corrections
-        are all caught by the same rule. Wild pitches, passed balls, steals,
-        and balks move existing runners but don't add a new one; the chat
-        reflects only what the official linescore actually says.
-      </p>
-      <p>
-        <a href="?demo=1">Try the guided demo ↗</a> ·
-        <a href="bases-loaded.html">Full situation monitor ↗</a> ·
-        <a href="verification.html">Requirements, routes &amp; official sources ↗</a>
-      </p>
-      <p>
-        Unofficial, personal-use fan project. Not affiliated with MLB or MLB
-        Advanced Media.
-      </p>
-    </footer>
   </main>
+
+  <footer class="site-footer">
+    <p>
+      <strong>One situation. Every game.</strong> This feed tracks
+      <em>only</em> games that are tied in the bottom of the 9th inning or
+      later, and narrates every step toward a walk-off bases-loaded
+      situation — watch begins, runners reaching, the moment all three bases
+      fill, tension rising, and the resolution (walk-off hit, third out,
+      bases cleared, or extra innings). Nothing else triggers an alert.
+    </p>
+    <p>
+      A tied game whose home team is <em>not</em> batting is never dropped:
+      it is shown as a <strong>held</strong> watch on the strip and in the
+      counters, and the watch re-opens when the home half starts — so a delay,
+      a scoreless ninth or a top half cannot lose the situation. The tabs
+      above the feed only filter what you are reading; they never change what
+      is polled or alerted.
+    </p>
+    <p>
+      Live data via the public MLB StatsAPI
+      (<a href="https://statsapi.mlb.com" target="_blank" rel="noopener">statsapi.mlb.com</a>).
+      We read official runner occupancy on first, second and third — we do
+      not guess from play text. Walks, hits, errors, catcher/fielder
+      interference, automatic extra-inning runners, and official corrections
+      are all caught by the same rule. Wild pitches, passed balls, steals,
+      and balks move existing runners but don't add a new one; the chat
+      reflects only what the official linescore actually says.
+    </p>
+    <p>
+      <a href="?demo=1">Try the guided demo ↗</a> ·
+      <a href="bases-loaded.html">Full situation monitor ↗</a> ·
+      <a href="verification.html">Requirements, routes &amp; official sources ↗</a>
+    </p>
+    <p>
+      Unofficial, personal-use fan project. Not affiliated with MLB or MLB
+      Advanced Media.
+    </p>
+  </footer>
 
   <script src="assets/js/api.js"></script>
   <script src="assets/js/ui.js"></script>

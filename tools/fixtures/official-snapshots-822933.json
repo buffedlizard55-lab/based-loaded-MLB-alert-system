@@ -1,0 +1,254 @@
+{
+  "fixture": "official-snapshots-822933",
+  "what": "Verbatim captures from the official MLB StatsAPI for one real game, used to prove the Loaded Late rules engine against real payloads instead of synthetic ones.",
+  "game": {
+    "gamePk": 822933,
+    "date": "2026-08-30",
+    "matchup": "San Diego Padres @ Tampa Bay Rays",
+    "venue": "Tropicana Field",
+    "final": "Rays 5, Padres 4 (11 innings)",
+    "firstPitchUtc": "2026-08-30T17:40:00Z"
+  },
+  "source": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live (official MLB StatsAPI; keyless, public)",
+  "capturedAt": "2026-09-30",
+  "captureMethod": "GET <url> — the `fields` projection is sent to the API itself, so each payload below is verbatim what the API returned for that URL. Each entry keeps its exact URL so anyone can re-fetch and diff it (tools/verify-official-snapshots.mjs does that in CI, nightly). The projection deliberately excludes `plays`/`currentPlay`, so the fixture carries NO play text: the alert has to fire on official runner occupancy and score alone, and the engine must not invent a play description it was never given.",
+  "whyThisGame": "It contains a real, official instance of the tracked situation — a tied game with the bases loaded in the bottom of the 11th — followed ~40 seconds later by the walk-off that ended it, plus the states around it: the tie at the end of the 9th, the tied bottom of the 10th with runners reaching, the tie broken in the top of the 11th, and the bases loaded one pitch *before* the tie (trailing 4-3). The last one is the negative control: bases loaded, bottom 11, but the game is not tied, so no alert may fire.",
+  "snapshots": [
+    {
+      "label": "end of the 9th — tied 3-3, home half over (watch is held, not over)",
+      "expect": "watch_held (first sight) · no alert",
+      "url": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_202000&fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes",
+      "payload": {
+        "gameData": {
+          "status": { "abstractGameState": "Live", "detailedState": "In Progress" },
+          "teams": {
+            "away": { "id": 135, "name": "San Diego Padres" },
+            "home": { "id": 139, "name": "Tampa Bay Rays" }
+          }
+        },
+        "liveData": {
+          "linescore": {
+            "currentInning": 9,
+            "inningState": "End",
+            "isTopInning": false,
+            "scheduledInnings": 9,
+            "teams": { "home": { "runs": 3 }, "away": { "runs": 3 } },
+            "offense": {
+              "batter": { "id": 630105, "fullName": "Jake Cronenworth" },
+              "onDeck": { "id": 592518, "fullName": "Manny Machado" },
+              "inHole": { "id": 664034, "fullName": "Ty France" },
+              "team": { "id": 135, "name": "San Diego Padres" }
+            },
+            "balls": 1,
+            "strikes": 3,
+            "outs": 3
+          }
+        }
+      }
+    },
+    {
+      "label": "bottom 10 — tied 3-3, automatic runner on second, nobody out",
+      "expect": "watch_begins (new extra inning) · no alert",
+      "url": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_203000&fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes",
+      "payload": {
+        "gameData": {
+          "status": { "abstractGameState": "Live", "detailedState": "In Progress" },
+          "teams": {
+            "away": { "id": 135, "name": "San Diego Padres" },
+            "home": { "id": 139, "name": "Tampa Bay Rays" }
+          }
+        },
+        "liveData": {
+          "linescore": {
+            "currentInning": 10,
+            "inningState": "Bottom",
+            "isTopInning": false,
+            "scheduledInnings": 9,
+            "teams": { "home": { "runs": 3 }, "away": { "runs": 3 } },
+            "offense": {
+              "batter": { "id": 656775, "fullName": "Cedric Mullins" },
+              "onDeck": { "id": 670764, "fullName": "Taylor Walls" },
+              "inHole": { "id": 650490, "fullName": "Yandy Díaz" },
+              "second": { "id": 622761, "fullName": "Jorge Mateo" },
+              "team": { "id": 139, "name": "Tampa Bay Rays" }
+            },
+            "balls": 1,
+            "strikes": 2,
+            "outs": 0
+          }
+        }
+      }
+    },
+    {
+      "label": "bottom 10 — tied 3-3, runners on second and third, two out (~40 seconds before the side was retired)",
+      "expect": "runner_advanced · no alert",
+      "url": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_203800&fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes",
+      "payload": {
+        "gameData": {
+          "status": { "abstractGameState": "Live", "detailedState": "In Progress" },
+          "teams": {
+            "away": { "id": 135, "name": "San Diego Padres" },
+            "home": { "id": 139, "name": "Tampa Bay Rays" }
+          }
+        },
+        "liveData": {
+          "linescore": {
+            "currentInning": 10,
+            "inningState": "Bottom",
+            "isTopInning": false,
+            "scheduledInnings": 9,
+            "teams": { "home": { "runs": 3 }, "away": { "runs": 3 } },
+            "offense": {
+              "batter": { "id": 666018, "fullName": "Jonathan Aranda" },
+              "onDeck": { "id": 691406, "fullName": "Junior Caminero" },
+              "inHole": { "id": 689414, "fullName": "Liam Hicks" },
+              "second": { "id": 650490, "fullName": "Yandy Díaz" },
+              "third": { "id": 622761, "fullName": "Jorge Mateo" },
+              "team": { "id": 139, "name": "Tampa Bay Rays" }
+            },
+            "balls": 2,
+            "strikes": 0,
+            "outs": 2
+          }
+        }
+      }
+    },
+    {
+      "label": "top 11 — Padres take a 4-3 lead (the tie is gone)",
+      "expect": "watch_ends · no alert",
+      "url": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_204330&fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes",
+      "payload": {
+        "gameData": {
+          "status": { "abstractGameState": "Live", "detailedState": "In Progress" },
+          "teams": {
+            "away": { "id": 135, "name": "San Diego Padres" },
+            "home": { "id": 139, "name": "Tampa Bay Rays" }
+          }
+        },
+        "liveData": {
+          "linescore": {
+            "currentInning": 11,
+            "inningState": "Top",
+            "isTopInning": true,
+            "scheduledInnings": 9,
+            "teams": { "home": { "runs": 3 }, "away": { "runs": 4 } },
+            "offense": {
+              "batter": { "id": 701538, "fullName": "Jackson Merrill" },
+              "onDeck": { "id": 593428, "fullName": "Xander Bogaerts" },
+              "inHole": { "id": 669392, "fullName": "Samad Taylor" },
+              "team": { "id": 135, "name": "San Diego Padres" }
+            },
+            "balls": 0,
+            "strikes": 0,
+            "outs": 1
+          }
+        }
+      }
+    },
+    {
+      "label": "bottom 11 — bases loaded, but the Rays are still behind 3-4: one pitch before the tying run",
+      "expect": "NO ALERT (bases loaded is not the tracked situation on its own — the score must be tied)",
+      "url": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205700&fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes",
+      "payload": {
+        "gameData": {
+          "status": { "abstractGameState": "Live", "detailedState": "In Progress" },
+          "teams": {
+            "away": { "id": 135, "name": "San Diego Padres" },
+            "home": { "id": 139, "name": "Tampa Bay Rays" }
+          }
+        },
+        "liveData": {
+          "linescore": {
+            "currentInning": 11,
+            "inningState": "Bottom",
+            "isTopInning": false,
+            "scheduledInnings": 9,
+            "teams": { "home": { "runs": 3 }, "away": { "runs": 4 } },
+            "offense": {
+              "batter": { "id": 676356, "fullName": "Jonny DeLuca" },
+              "onDeck": { "id": 622761, "fullName": "Jorge Mateo" },
+              "inHole": { "id": 656775, "fullName": "Cedric Mullins" },
+              "first": { "id": 676356, "fullName": "Jonny DeLuca" },
+              "second": { "id": 802415, "fullName": "Chandler Simpson" },
+              "third": { "id": 700652, "fullName": "Kenny Piper" },
+              "team": { "id": 139, "name": "Tampa Bay Rays" }
+            },
+            "balls": 0,
+            "strikes": 0,
+            "outs": 1
+          }
+        }
+      }
+    },
+    {
+      "label": "bottom 11 — TIED 4-4 with the bases loaded, one out: the tracked situation, live, ~40 seconds before the walk-off",
+      "expect": "BASES-LOADED ALERT (tied + all three bases occupied + bottom 9+ + fewer than three outs)",
+      "url": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205740&fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes",
+      "payload": {
+        "gameData": {
+          "status": { "abstractGameState": "Live", "detailedState": "In Progress" },
+          "teams": {
+            "away": { "id": 135, "name": "San Diego Padres" },
+            "home": { "id": 139, "name": "Tampa Bay Rays" }
+          }
+        },
+        "liveData": {
+          "linescore": {
+            "currentInning": 11,
+            "inningState": "Bottom",
+            "isTopInning": false,
+            "scheduledInnings": 9,
+            "teams": { "home": { "runs": 4 }, "away": { "runs": 4 } },
+            "offense": {
+              "batter": { "id": 622761, "fullName": "Jorge Mateo" },
+              "onDeck": { "id": 656775, "fullName": "Cedric Mullins" },
+              "inHole": { "id": 670764, "fullName": "Taylor Walls" },
+              "first": { "id": 676356, "fullName": "Jonny DeLuca" },
+              "second": { "id": 802415, "fullName": "Chandler Simpson" },
+              "third": { "id": 700652, "fullName": "Kenny Piper" },
+              "team": { "id": 139, "name": "Tampa Bay Rays" }
+            },
+            "balls": 0,
+            "strikes": 1,
+            "outs": 1
+          }
+        }
+      }
+    },
+    {
+      "label": "bottom 11 — Rays 5, Padres 4: the situation resolved as a walk-off",
+      "expect": "walkoff_rbi",
+      "url": "https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205820&fields=gameData,status,abstractGameState,detailedState,teams,away,home,name,liveData,linescore,currentInning,inningState,isTopInning,scheduledInnings,runs,offense,first,second,third,batter,onDeck,inHole,id,fullName,team,outs,balls,strikes",
+      "payload": {
+        "gameData": {
+          "status": { "abstractGameState": "Live", "detailedState": "In Progress" },
+          "teams": {
+            "away": { "id": 135, "name": "San Diego Padres" },
+            "home": { "id": 139, "name": "Tampa Bay Rays" }
+          }
+        },
+        "liveData": {
+          "linescore": {
+            "currentInning": 11,
+            "inningState": "Bottom",
+            "isTopInning": false,
+            "scheduledInnings": 9,
+            "teams": { "home": { "runs": 5 }, "away": { "runs": 4 } },
+            "offense": {
+              "batter": { "id": 622761, "fullName": "Jorge Mateo" },
+              "onDeck": { "id": 656775, "fullName": "Cedric Mullins" },
+              "inHole": { "id": 670764, "fullName": "Taylor Walls" },
+              "first": { "id": 622761, "fullName": "Jorge Mateo" },
+              "second": { "id": 676356, "fullName": "Jonny DeLuca" },
+              "third": { "id": 802415, "fullName": "Chandler Simpson" },
+              "team": { "id": 139, "name": "Tampa Bay Rays" }
+            },
+            "balls": 0,
+            "strikes": 1,
+            "outs": 1
+          }
+        }
+      }
+    }
+  ]
+}

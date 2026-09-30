@@ -1,7 +1,7 @@
 # Loaded Late — tied, bases-loaded MLB alerts
 
 > **Live site:** https://buffedlizard55-lab.github.io/based-loaded-MLB-alert-system/  
-> **All deterministic tests passing** (3,500+ checks) | **GitHub Pages deployed** | **Web Push + always-on watcher ready**
+> **All deterministic tests passing** (13,000+ checks) | **GitHub Pages deployed** | **Web Push + always-on watcher ready**
 
 This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.github.io/MLB-Live-PBP/reviews.html), now focused on **one alert condition only**:
 
@@ -16,11 +16,12 @@ This repository is a separate copy of [MLB Live PBP](https://buffedlizard55-lab.
 - **Route-independent:** reads official first/second/third base occupants, not event descriptions. Walks, hits, errors, interference, automatic extra-inning runners and official corrections all use the same rule.
 - **Alerts:** highlighted live cards, optional sound and opt-in desktop notifications. A continuous loaded situation alerts once; a confirmed exit and reload can alert again, even in the same inning.
 - **History:** immutable score, outs and runner snapshots, retained in this browser for seven days (maximum 200 entries). Refreshing the page restores history and deduplication state. Not shared across devices or a complete historical replay.
-- **Site-wide strip:** the scoreboard, replay feed (`reviews.html`) and game view mount a slim "Loaded Late" watcher, so the same one situation is tracked from whichever page of this copy you are on. The strip reuses the same rules engine, the same alert log and the same notification opt-in as the dashboard; a continuous situation never alerts twice just because you changed pages. The monitor page itself does not load it, so no page ever runs two watchers.
+- **Site-wide strip:** the scoreboard, replay feed (`reviews.html`), game view (`game.html`) and the sources page (`verification.html`) mount a slim "Loaded Late" watcher, so the same one situation is tracked from whichever page of this copy you are on. The strip reuses the same rules engine, the same alert log and the same notification opt-in as the dashboard; a continuous situation never alerts twice just because you changed pages. The monitor page itself does not load it, so no page ever runs two watchers.
 - **Live slate (no manual checking):** the monitor also lists **every game on the slate** — score, half-inning, outs, and one line saying why it is or is not tracked (`BASES LOADED · ALERT`, `ON WATCH · 1st & 2nd · 1 to fill`, `TIED · TOP HALF · HOME STILL TO BAT`, `PAUSED · STILL TIED · WATCH HELD`, `NOT YET INNING 9`, …) plus the provenance and age of the numbers on that row (`live snapshot · 3s ago` or `official schedule scan`). Nothing on the page has to be worked out by hand.
 - **A delay cannot lose the situation:** a rain delay or suspension pauses play without proving the bases cleared, so the watch is **held** and labelled as paused instead of the game silently disappearing. A stopped late tie is counted as a held watch on both front ends; an early or untied delay is counted nowhere.
 - **Verified, checkable claims:** [`verification.html`](verification.html) maps every requirement of the brief to where it is implemented and how to check it, lists every route to loaded bases with its rule number, and links the official sources for each claim.
 - **Original pages preserved:** `scoreboard.html`, `game.html`, and `reviews.html`. Their legacy features remain separate from this narrow monitor.
+- **Proven on real official data:** [`tools/official-snapshot-test.mjs`](tools/official-snapshot-test.mjs) replays seven payloads captured from the official StatsAPI for one real game — Padres @ Rays, 2026-08-30, gamePk 822933 — through the same mapping path both front ends run (`snapshotGame` → `evaluate` → `observe` → `diffStream`). That game contained the situation for real: **tied 4–4, bases loaded, bottom of the 11th, one out**, captured at `timecode=20260830_205740` — one alert, correctly raised — while the snapshot one pitch earlier (**bases loaded, Rays still behind 3–4**) raises nothing at all, and the walk-off followed ~40 seconds later. Every fixture entry keeps the exact URL it came from, and [`tools/verify-official-snapshots.mjs`](tools/verify-official-snapshots.mjs) re-fetches all seven and fails on any difference (CI: nightly, 116 official-snapshot checks replay offline). The key capture was re-fetched from the live API again during this session and matched field for field.
 
 **New here?** [docs/loaded-late-quickstart.md](docs/loaded-late-quickstart.md) is the short version: which page to open, how to arm sound and notifications, what triggers an alert, and what the limits are.
 
@@ -124,6 +125,7 @@ See [the detection rules, coverage and limitations](docs/bases-loaded-alerts.md)
 node tools/bases-loaded-test.mjs         # rules engine
 node tools/bases-loaded-monitor-test.mjs # monitor page controller
 node tools/chat-feed-test.mjs            # chat-style feed (alerts.html) controller
+node tools/official-snapshot-test.mjs    # the rules engine vs REAL official payloads (fixtures, no network)
 node tools/bases-loaded-strip-test.mjs   # site-wide strip + page wiring
 node tools/watcher-test.mjs              # the always-on watcher (same rules, no browser)
 node tools/watcher-deploy-test.mjs       # deployment recipes vs. the watcher's real settings
@@ -133,6 +135,7 @@ node tools/site-links-test.mjs           # pages, links, citations, CI wiring
 node tools/make-icons.mjs --check        # the shipped icons still match their generator
 node tools/icons-test.mjs                # installability: manifest, icons, pages, buzz parity
 node tools/deployed-site-test.mjs        # the published site itself (network)
+node tools/verify-official-snapshots.mjs # re-fetch every real-data fixture from the live API (network)
 ```
 
 These deterministic tests need neither external packages nor live MLB games. The 17-step guided demo tests top-half exclusion, the changeover watch, partial occupancy, first alert, repeated poll, bases clearing/reloading, a walk-off, an automatic runner, bottom 14, and a tying bases-loaded walk in bottom 15. Rule tests also exhaustively check 11,520 inning/half/outs/score/base combinations and verify incomplete data and rain delays do not re-arm an existing episode. The strip suite additionally drives the site-wide watcher through a deterministic DOM, clock and API stub: extra innings 10–17, partial occupancy labels, opt-in sound/notifications, the cross-page quiet window, hidden-tab pause, 30s/5s cadence, stale and failed snapshots, blocked storage, and a page with no api client. `chat-feed-test.mjs` drives the chat-style feed (`alerts.html`) through the same deterministic DOM, clock and API stub: the full watch→build→loaded→tension→cleared→reload→walk-off story, extra innings, held watches (top half, end of a home half, first sight, reload mid-hold, tie broken), the category tabs (counts, one-tab-per-kind partition, filtering that never drops an event), the live-now strip in all four states, a failed-fetch outage that must never fabricate a verdict, a late tie in a delay that must never be counted as a live alert, the cross-page quiet window, a page reload that must not re-alert, and zero idle DOM rebuilds for the cards, the strip and the tabs. `webpush-test.mjs` reproduces the published RFC 8291 and RFC 8292 vectors value by value
@@ -194,6 +197,7 @@ carries them in its **Sources for manual review** panel):
 | One coherent status + linescore + current play snapshot (the exact projection `getAlertSnapshot` sends) | [`GET /api/v1.1/game/823001/feed/live?fields=…`](https://statsapi.mlb.com/api/v1.1/game/823001/feed/live?fields=gamePk,gameData,status,abstractGameState,detailedState,statusCode,liveData,plays,currentPlay,result,description,event,eventType,rbi,awayScore,homeScore,linescore,currentInning,inningState,isTopInning,outs,teams,away,home,runs,offense,defense,first,second,third,id,fullName,balls,strikes,batter,pitcher,onDeck,inHole) | Verified 2026-09-29 |
 | Unfiltered shape of the same linescore (occupancy, count, defense/offense) | [`GET /api/v1/game/823001/linescore`](https://statsapi.mlb.com/api/v1/game/823001/linescore) | Verified 2026-09-29 |
 | Same games as MLB displays them (side-by-side review) | [MLB Gameday](https://www.mlb.com/gameday) | Reference |
+| **A real instance of the tracked situation** — Padres @ Rays, 2026-08-30: tied 4–4, bases loaded, bottom 11, one out, and the walk-off ~40 s later (Rays 5–4) | [`GET /api/v1.1/game/822933/feed/live?timecode=20260830_205740`](https://statsapi.mlb.com/api/v1.1/game/822933/feed/live?timecode=20260830_205740) · [MLB.com account of the game](https://www.mlb.com/news/jonny-deluca-hits-game-tying-home-run-in-bottom-of-ninth-before-rays-walk-it-off-in-11th) · fixture: [`tools/fixtures/official-snapshots-822933.json`](tools/fixtures/official-snapshots-822933.json) | Captured 2026-09-30 (7 payloads, URLs kept); re-fetched by `tools/verify-official-snapshots.mjs` |
 | Walk-off ending, bases full — **Rule 5.08(b)**, quoted verbatim: *"When the winning run is scored in the last half-inning of a regulation game, or in the last half of an extra inning, as the result of a base on balls, hit batter or any other play with the bases full which forces the batter and all other runners to advance without liability of being put out, the umpire shall not declare the game ended until the runner forced to advance from third has touched home base and the batter-runner has touched first base."* | [Official Baseball Rules, 2023 edition (PDF, MLB)](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [Rule 5.08 text listing](https://baseballrulesacademy.com/official-rule/mlb/5-08-how-a-team-scores/) · [Rule 5.0 text mirror](https://www.umpirebible.com/OBR16/5.0.htm) | Text checked 2026-09-29 (all three) |
 | How a runner is added — walks, hit-by-pitch, catcher/fielder interference, uncaught third strike — **Rule 5.05(a)–(b)** | [Official Baseball Rules PDF](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) · [Rule 5.0 text mirror](https://www.umpirebible.com/OBR16/5.0.htm) | Text checked 2026-09-29 |
 | Routes that cannot add a runner on their own — balks (**6.02(a)**), obstruction awards (**6.01(h)**), wild pitches / passed balls (**9.13**), stolen bases (**9.07**), substitutions (**5.10**) | [Official Baseball Rules PDF](https://img.mlbstatic.com/mlb-images/image/upload/mlb/wqn5ah4c3qtivwx3jatm.pdf) | Rule numbers checked 2026-09-29 |
@@ -237,13 +241,18 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
 5. **Unofficial data source.** The MLB StatsAPI has no SLA and no published rate limit;
    terms are ambiguous for public deployments ([docs/api-compliance.md](docs/api-compliance.md)).
    The client self-limits and degrades visibly instead of guessing.
-6. **Live end-to-end proof still pending.** Deterministic suites cover 11,806 rule states
-   plus 101 monitor, 152 chat-feed, 160 strip, 173 watcher, 112 deployment, 130 Web Push,
-   74 phone-alert, 153 installability and 395 site checks, and a published-site check
-   verifies the deployment itself (counts as of 2026-09-30, session 2), but a live qualifying game
-   has not yet been observed end-to-end from this deployment, and no alert has yet arrived
-   on a real phone through a real push service — the next live tied bottom-9+ game is the
-   real acceptance test.
+6. **Live end-to-end proof — detection proven on real data; the unattended watch is not.**
+   Deterministic suites cover 11,806 rule states plus 101 monitor, 152 chat-feed, 160 strip,
+   173 watcher, 112 deployment, 130 Web Push, 74 phone-alert, 153 installability, 402 site checks
+   and 116 official-snapshot checks (counts as of 2026-09-30, session 3), and a published-site
+   check verifies the deployment itself. The engine has now been **run against real official
+   payloads**: on 2026-08-30 the Padres and Rays were tied 4–4 with the bases loaded in the
+   bottom of the 11th, one out — captured from the official feed's `timecode` replay and pinned
+   in `tools/fixtures/official-snapshots-822933.json` — and the engine raises exactly one alert
+   on that snapshot while staying silent on the bases-loaded-but-not-tied snapshot one pitch
+   earlier. What is still unproven is the *unattended* path: no page or watcher has yet been
+   sitting on a live qualifying game as it happened, and no alert has arrived on a real phone
+   through a real push service. The next live tied bottom-9+ game remains the acceptance test.
 7. **Development-sandbox network limit (partially closed, still flagged).** Raw socket
    egress from this sandbox is blocked (`curl`/`node fetch` to `statsapi.mlb.com` die with
    `SSL_ERROR_SYSCALL`, HTTP 000), so the watcher and the live smoke suite cannot run
@@ -365,6 +374,41 @@ be done and any limitations"), reviewed line by line against the code on 2026-09
    tabs are covered by the deterministic DOM stub and the published-site byte check,
    but no screenshot test exists in this repository, so the pixels themselves are
    reviewed by eye on a real screen rather than asserted.
+
+## Session log — 2026-09-30 (session 3: the real official snapshot — positive and negative)
+
+Repository reviewed line by line again, then part of the biggest open gap — *"live end-to-end
+proof still pending"* — was closed with **real official data** instead of another synthetic
+fixture.
+
+- **A real instance of the tracked situation, from the official API.** Padres @ Rays,
+  2026-08-30, gamePk 822933: tied 4–4, bases loaded, bottom of the 11th, one out, Jorge Mateo
+  batting — captured from
+  `GET /api/v1.1/game/822933/feed/live?timecode=20260830_205740` (the StatsAPI's own replay
+  parameter), with the walk-off that ended it ~40 seconds later (Rays 5–4 at
+  `timecode=20260830_205820`). The 40-second window is the design premise: the feed's 2-second
+  late-inning cadence cannot miss a state that lives that long.
+- **Pinned as a test, not an anecdote.** `tools/official-snapshot-test.mjs` replays seven
+  captured payloads from that game — the tied end of the 9th, the tied bottom of the 10th with
+  runners reaching, the tie broken in the top of the 11th, **bases loaded while trailing 3–4
+  (negative control: no alert)**, **tied 4–4 with the bases loaded (exactly one alert)**, and
+  the walk-off — through `snapshotGame → evaluate → observe → diffStream`, the same path both
+  front ends run. 116 checks, no network, no dependencies.
+- **Re-verifiable by anyone, line by line.** Each fixture entry keeps its full `timecode` URL
+  and `tools/verify-official-snapshots.mjs` re-fetches all seven from `statsapi.mlb.com` and
+  fails on any difference; CI runs it in the nightly live job. The capture projection omits
+  play text, so the alert has to fire on official occupancy and score alone — and the card
+  uses its honest fallback rather than inventing a play description.
+- **Irregularities flagged, not smoothed over.** (1) The official `inningState` uses `End`,
+  not only `Middle`, between halves; the engine already treats that as *held* rather than
+  *watching*, and the captured payloads now pin that behaviour against real data. (2) The
+  20:57:00Z snapshot lists the batter (DeLuca) as also occupying first base — a mid-play
+  transitional artifact of the feed. The engine does not react to it (the game was not tied at
+  that instant) and nothing was "fixed" to paper over a payload quirk we do not control.
+- **Deployment read back during the session.** The published copy was fetched live:
+  `scoreboard.html` rendered the strip (real slate, "no tied bottom-9 situation right now",
+  per-game provenance) and `alerts.html` rendered its empty state over today's four-game Wild
+  Card slate. `tools/deployed-site-test.mjs` remains the standing gate after every merge.
 
 ## Session log — 2026-09-30 (session 2: held watches, tabs and the live strip)
 
@@ -1066,7 +1110,10 @@ for archived games the request is scoped to the feed's game season.
 ├── sw.js                      # service worker: shows a Web Push notification, caches nothing
 ├── tools/                     # deterministic test suites (no packages, no network)
 │   ├── watcher.mjs            # always-on watcher: same rules engine, no browser needed
-│   └── webpush.mjs            # Web Push encryption (RFC 8291) + VAPID (RFC 8292)
+│   ├── webpush.mjs            # Web Push encryption (RFC 8291) + VAPID (RFC 8292)
+│   ├── official-snapshot-test.mjs    # the rules engine vs REAL official payloads
+│   ├── verify-official-snapshots.mjs # re-fetch those fixtures from the live API (network)
+│   └── fixtures/              # verbatim official captures + the exact URLs behind them
 ├── deploy/                    # how to host the watcher: systemd · Docker · launchd · cron
 ├── docs/                      # detection contract, verification reports, quickstart
 ├── .github/workflows/         # smoke.yml — checks in CI (Pages publishes from main)
