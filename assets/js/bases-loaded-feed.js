@@ -279,23 +279,55 @@
     }
   }
 
-  function shouldPoll(game, streamState) {
+  /**
+   * Same target contract as the monitor (bases-loaded.js): live games in
+   * inning 9+, plus any game whose last observe() state still carries an
+   * active alert — the `observationState` saved by acceptOne, never the
+   * stream state (which has no `active` flag). Passing the wrong state
+   * object would silently drop a loaded game whose published inning
+   * momentarily regressed.
+   */
+  function shouldPoll(game, stream) {
     if (demo) return true;
-    return rules.scanTarget(game, streamState);
+    return rules.scanTarget(game, stream?.observationState);
   }
+
+  /**
+   * The cadence map handed to rules.pollCadence / shown in the status line.
+   * One shape everywhere, so the label can never disagree with the timer the
+   * loop actually arms: the observe() state per game (`.active` = a loaded
+   * situation is still live), exactly like the monitor does.
+   */
+  function cadenceStates() {
+    const states = {};
+    for (const [pk, s] of Object.entries(gameStreams))
+      states[pk] = s?.observationState || null;
+    return states;
+  }
+
+  function cadenceMs() {
+    return rules.pollCadence(games, cadenceStates(), {
+      fast: FAST_POLL_MS,
+      slow: SLOW_POLL_MS,
+    });
+  }
+
+  const sinceDiscovery = () => Date.now() - (discoveryAt || 0) >= DISCOVERY_MS;
 
   async function poll() {
     if (busy) return;
     busy = true;
     try {
       const now = Date.now();
-      const sinceDiscovery = now - (discoveryAt || 0);
-      if (!discoveryAt || sinceDiscovery >= DISCOVERY_MS) await discover();
+      if (!discoveryAt || sinceDiscovery()) await discover();
+      // Mirror the monitor: a game that fell off the official slate no longer
+      // contributes a stat or an "on watch" row.
+      for (const pk of snapshots.keys()) if (!games.has(pk)) snapshots.delete(pk);
       const targets = [];
       for (const g of games.values()) {
         const pk = g.gamePk;
         const stream = gameStreams[pk];
-        if (shouldPoll(g, stream) || (stream && (now - (stream.at || 0) < 60000))) {
+        if (shouldPoll(g, stream) || (stream && now - (stream.at || 0) < 60000)) {
           targets.push(g);
         }
       }
@@ -328,23 +360,69 @@
 
   function scheduleNext() {
     clearTimeout(timer);
-    // Reuse the shared cadence logic (5s fast / 30s slow by default in the
-    // rules module). The monitor page uses 2s/15s for its own loop but we
-    // expose that as the visible "every 2s / every 15s" text; for the chat
-    // feed we follow the rules default to be slightly gentler on the API
-    // while still catching the situation within a few seconds.
-    const ms = rules.pollCadence(games, Object.fromEntries(
-      Object.entries(gameStreams).map(([pk, s]) => [pk, { active: !!(s?.result?.watching || s?.result?.loaded) }]),
-    ), { fast: FAST_POLL_MS, slow: SLOW_POLL_MS });
-    timer = setTimeout(poll, ms);
+    // One cadence for the timer and for the visible "every 2s / every 15s"
+    // text: cadenceMs() is what the status line shows, so the label can
+    // never drift from the loop it describes.
+    timer = setTimeout(poll, cadenceMs());
+  }
+
+  /**
+   * Append one stream event to the feed, deduplicated, with the shared
+   * cross-page quiet window applied to the primary alert kinds. Returns
+   * true when the row was added.
+   */
+  function appendEvent(ev, now) {
+    if (feed.some((e) => e.id === ev.id)) return false;
+    const isPrimary = ev.kind === "bases_loaded" || ev.kind === "walkoff_rbi";
+    const repeated =
+      isPrimary &&
+      rules.recentSharedAlert(
+        mergeSharedHistory(),
+        ev.gamePk,
+        ev.inning,
+        now,
+        QUIET_MS,
+        PAGE_ID,
+      );
+    feed.unshift({ ...ev, observer: PAGE_ID, crossPage: repeated });
+    newPks.add(ev.id);
+    newUntil = now + HIGHLIGHT_MS;
+    if (isPrimary && !repeated) {
+      beep();
+      notify(ev);
+    }
+    if (isPrimary) recordShared(ev, true);
+    return true;
   }
 
   function acceptOne(scheduleGame, game, errorMsg, now) {
     const pk = scheduleGame.gamePk;
-    const previous = gameStreams[pk]?.observationState || null;
-    const prevStreamState = gameStreams[pk]?.streamState || null;
+    const priorStream = gameStreams[pk] || null;
+    const previous = priorStream?.observationState || null;
+    const prevStreamState = priorStream?.streamState || null;
     if (!game) {
       snapshots.set(pk, { game: scheduleGame, at: now, error: errorMsg || "Unavailable" });
+      // A failed fetch is part of the narration too. diffStream surfaces
+      // data_unavailable once per error episode (it only fires when the
+      // previous stream state was not already an error) and holds the watch.
+      // An empty result (known=false) is passed on purpose: nothing may be
+      // inferred from data that did not arrive, so no final / walk-off
+      // verdict can be built from a stale score while the fetch is failing.
+      const streamDiff = rules.diffStream(
+        prevStreamState,
+        { result: {}, state: previous, event: null },
+        scheduleGame,
+        now,
+        errorMsg || "Live snapshot unavailable",
+      );
+      gameStreams[pk] = {
+        ...(priorStream || {}),
+        at: now,
+        streamState: streamDiff.state,
+        error: errorMsg || "Live snapshot unavailable",
+      };
+      for (const ev of streamDiff.events) appendEvent(ev, now);
+      if (feed.length > MAX_FEED) feed.length = MAX_FEED;
       return;
     }
     const observation = rules.observe(previous, game, now);
@@ -360,29 +438,7 @@
     };
     snapshots.set(pk, { game, at: now, result: observation.result, error: errorMsg || "" });
 
-    for (const ev of streamDiff.events) {
-      // cross-page quiet for the primary alert event
-      const isPrimary = ev.kind === "bases_loaded" || ev.kind === "walkoff_rbi";
-      const repeated =
-        isPrimary &&
-        rules.recentSharedAlert(
-          mergeSharedHistory(),
-          ev.gamePk,
-          ev.inning,
-          now,
-          QUIET_MS,
-          PAGE_ID,
-        );
-      if (feed.some((e) => e.id === ev.id)) continue;
-      feed.unshift({ ...ev, observer: PAGE_ID, crossPage: repeated });
-      newPks.add(ev.id);
-      newUntil = Date.now() + HIGHLIGHT_MS;
-      if (isPrimary && !repeated) {
-        beep();
-        notify(ev);
-      }
-      if (isPrimary) recordShared(ev, true);
-    }
+    for (const ev of streamDiff.events) appendEvent(ev, now);
     // Trim
     if (feed.length > MAX_FEED) feed.length = MAX_FEED;
   }
@@ -492,6 +548,17 @@
     const isWalkoff = ev.kind === "walkoff_rbi";
     const isAlert = ev.kind === "bases_loaded";
     const titleCls = isWalkoff ? "bl-title bl-title-walkoff" : isAlert ? "bl-title bl-title-alert" : "bl-title";
+    // Outcome marker in the style of the replay feed's ✓/✗ verdict badges:
+    // a terminal card tells you at a glance how the situation resolved.
+    const resultMark = isWalkoff
+      ? `<span class="bl-result bl-result-win" title="The home team walked it off">✓ Walk-off</span>`
+      : ev.kind === "bases_cleared"
+        ? `<span class="bl-result bl-result-out" title="The bases emptied without a walk-off">✗ No walk-off</span>`
+        : ev.kind === "watch_ends"
+          ? `<span class="bl-result bl-result-out" title="The watch window closed without a walk-off">✗ Watch over</span>`
+          : ev.kind === "final"
+            ? `<span class="bl-result bl-result-final" title="Game final">— Final</span>`
+            : "";
     return `<article class="${cls}">
       <div class="bl-time">
         <span class="bl-time-day">${escape(day(ev.observedAt))}</span>
@@ -503,6 +570,7 @@
           ${validPk(ev.gamePk) ? `<a class="bl-game" href="${escape(gameLink(ev.gamePk))}">${escape(ev.away)} @ ${escape(ev.home)} ${scoreStr}</a>` : `<span class="bl-game">${escape(ev.away)} @ ${escape(ev.home)}</span>`}
           ${inningBadge}
           ${tension}
+          ${resultMark}
         </div>
         <h3 class="${titleCls}">${titleFor(ev)}</h3>
         ${lastPlay}
@@ -533,7 +601,17 @@
     return { active: activeLoads.length, watch: onWatch.length + paused.length, loadsToday, walkoffs };
   }
 
-  function render() {
+  /**
+   * Rendering is split in two on purpose:
+   *   renderStats() — the counters, banner and status line. Cheap text writes,
+   *     safe to run on every tick.
+   *   renderFeed()  — rebuilds the card list, and ONLY when the feed actually
+   *     changed (a signature of the visible event ids + highlight state).
+   * Rebuilding the card DOM on every tick would restart the new-row flash
+   * animation every second and swap links out from under the pointer, so the
+   * one-second heartbeat never touches the feed unless there is news.
+   */
+  function renderStats() {
     const stats = computeStats();
     const $active = $("stat-active");
     const $watch = $("stat-watch");
@@ -548,18 +626,44 @@
 
     const $err = $("banner");
     if ($err) $err.textContent = scheduleError || "";
+  }
 
+  function renderStatusLine() {
+    const $status = $("status-line");
+    if (!$status) return;
+    const gamesCount = demo ? 1 : games.size;
+    const cadence = demo ? "demo" : cadenceMs() === FAST_POLL_MS ? "every 2s" : "every 15s";
+    $status.textContent = lastUpdate
+      ? `${gamesCount} game${gamesCount === 1 ? "" : "s"} · ${feed.length} feed event${feed.length === 1 ? "" : "s"} · updated ${time(lastUpdate)} · refreshing ${cadence}`
+      : "Waiting for first snapshot…";
+  }
+
+  const feedSignature = () =>
+    `${feed.slice(0, 100).map((e) => e.id).join("|")}#${newPks.size ? 1 : 0}#${Date.now() < newUntil ? 1 : 0}`;
+  let lastSignature = null;
+
+  function renderFeed(force = false) {
+    const sig = feedSignature();
+    if (!force && sig === lastSignature) return false;
+    lastSignature = sig;
     const list = $("feed-list");
-    if (!list) return;
+    if (!list) return false;
     if (!feed.length) {
       list.innerHTML = `<div class="bl-empty"><span class="bl-empty-icon">◇</span><strong>Waiting for the first qualifying situation…</strong>
         When a tied game reaches the bottom of the 9th (or later) and the bases start filling up, events will appear here live — chat style, newest first.</div>`;
-      return;
+      return true;
     }
     list.innerHTML = feed
       .slice(0, 100)
       .map(renderRow)
       .join("");
+    return true;
+  }
+
+  function render(force = false) {
+    renderStats();
+    renderStatusLine();
+    renderFeed(force);
   }
 
   /* ---------------------------------------------------------------- demo */
@@ -737,19 +841,19 @@
     const el = $("countdown");
     if (!el || !lastUpdate) return;
     const since = (Date.now() - lastUpdate) / 1000;
-    const hasActive = Object.values(gameStreams).some(
-      (s) => s && (s.result?.watching || s.result?.loaded),
-    );
-    const next = (hasActive ? FAST_POLL_MS : SLOW_POLL_MS) / 1000;
+    // cadenceMs() is the exact delay the next timer was armed with, so the
+    // countdown and the "every 2s / every 15s" label can never drift from
+    // the loop they describe.
+    const next = cadenceMs() / 1000;
     const left = Math.max(0, Math.round(next - since));
     el.textContent = `${left}s`;
 
-    // Status line label
+    // Small label under the "Feed events" counter
     const upd = $("updated");
     if (upd) {
       const secs = Math.round(since);
       upd.textContent = `updated ${time(lastUpdate)} · ${secs}s ago · refreshing ${
-        hasActive ? "every 2s" : "every 15s"
+        cadenceMs() === FAST_POLL_MS ? "every 2s" : "every 15s"
       }`;
     }
     const dot = $("live-dot");
