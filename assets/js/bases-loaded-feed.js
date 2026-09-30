@@ -328,10 +328,14 @@
 
   function scheduleNext() {
     clearTimeout(timer);
-    const hasActive = Object.values(gameStreams).some(
-      (s) => s && (s.result?.watching || s.result?.loaded),
-    );
-    const ms = hasActive ? FAST_POLL_MS : SLOW_POLL_MS;
+    // Reuse the shared cadence logic (5s fast / 30s slow by default in the
+    // rules module). The monitor page uses 2s/15s for its own loop but we
+    // expose that as the visible "every 2s / every 15s" text; for the chat
+    // feed we follow the rules default to be slightly gentler on the API
+    // while still catching the situation within a few seconds.
+    const ms = rules.pollCadence(games, Object.fromEntries(
+      Object.entries(gameStreams).map(([pk, s]) => [pk, { active: !!(s?.result?.watching || s?.result?.loaded) }]),
+    ), { fast: FAST_POLL_MS, slow: SLOW_POLL_MS });
     timer = setTimeout(poll, ms);
   }
 
@@ -372,6 +376,7 @@
       if (feed.some((e) => e.id === ev.id)) continue;
       feed.unshift({ ...ev, observer: PAGE_ID, crossPage: repeated });
       newPks.add(ev.id);
+      newUntil = Date.now() + HIGHLIGHT_MS;
       if (isPrimary && !repeated) {
         beep();
         notify(ev);
@@ -541,15 +546,6 @@
     if ($walkoffs) $walkoffs.textContent = String(stats.walkoffs);
     if ($events) $events.textContent = String(feed.length);
 
-    const $updated = $("updated");
-    if ($updated && lastUpdate) {
-      const secs = Math.round((Date.now() - lastUpdate) / 1000);
-      $updated.textContent = `updated ${time(lastUpdate)} · ${secs}s ago · refreshing ${
-        Object.values(gameStreams).some((s) => s?.result?.watching || s?.result?.loaded) ? "every 2s" : "every 15s"
-      }`;
-    }
-    const $dot = $("live-dot");
-    if ($dot) $dot.classList.toggle("on", !scheduleError && discoveryAt > 0);
     const $err = $("banner");
     if ($err) $err.textContent = scheduleError || "";
 
@@ -747,6 +743,17 @@
     const next = (hasActive ? FAST_POLL_MS : SLOW_POLL_MS) / 1000;
     const left = Math.max(0, Math.round(next - since));
     el.textContent = `${left}s`;
+
+    // Status line label
+    const upd = $("updated");
+    if (upd) {
+      const secs = Math.round(since);
+      upd.textContent = `updated ${time(lastUpdate)} · ${secs}s ago · refreshing ${
+        hasActive ? "every 2s" : "every 15s"
+      }`;
+    }
+    const dot = $("live-dot");
+    if (dot) dot.classList.toggle("on", !scheduleError && discoveryAt > 0);
   }
 
   function clearNewHighlights() {
